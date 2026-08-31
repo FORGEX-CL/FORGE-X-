@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WalletButton } from "./WalletButton";
 
 const nav = [
   ["Home", "/"], ["Market", "/market"], ["Launch", "/launch"], ["Trade", "/trade"],
@@ -14,7 +15,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <nav className="hidden gap-6 text-sm text-white/60 lg:flex">
             {nav.map(([label, href]) => <Link key={href} href={href} className="transition hover:text-white">{label}</Link>)}
           </nav>
-          <button className="rounded-full bg-[#f5c542] px-4 py-2 text-sm font-bold text-black hover:bg-[#ffd75e]">Connect Wallet</button>
+          <WalletButton />
         </div>
       </header>
       {children}
