@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
+    "@solana/spl-token": "^0.4.14",
+    "@raydium-io/raydium-sdk-v2": "^0.2.42-alpha",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"
@@ -21,7 +23,6 @@
     "@types/react-dom": "latest",
     "eslint": "latest",
     "eslint-config-next": "latest",
-    "postcss": "latest",
     "tailwindcss": "latest",
     "typescript": "latest"
   }
