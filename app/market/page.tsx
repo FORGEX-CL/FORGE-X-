@@ -1,0 +1,6 @@
+import { Shell, SectionTitle, Card } from "../components/Shell";
+
+const markets = [
+  ["SOL/USDC", "$186.42", "+4.82%", "$48.2M"], ["JUP/USDC", "$0.74", "+7.31%", "$21.8M"], ["BONK/SOL", "$0.000021", "+12.14%", "$14.6M"], ["WIF/SOL", "$0.91", "-2.06%", "$9.7M"], ["RAY/USDC", "$3.18", "+3.44%", "$7.1M"]
+];
+export default function Market() { return <Shell><main className="mx-auto max-w-7xl px-5 py-12 lg:px-8"><SectionTitle eyebrow="Market" title="Discover the market." text="A focused market terminal for discovering Solana assets. Live data adapters come next; this interface is intentionally ready for real feeds."/><Card><div className="grid grid-cols-4 border-b border-white/10 px-2 pb-4 text-xs uppercase tracking-wider text-white/35"><span>Pair</span><span>Price</span><span>24h</span><span>Volume</span></div>{markets.map(([pair,price,change,volume])=><div key={pair} className="grid grid-cols-4 items-center border-b border-white/5 px-2 py-5 text-sm last:border-0"><span className="font-semibold">{pair}</span><span>{price}</span><span className={change.startsWith("+") ? "text-emerald-400" : "text-red-400"}>{change}</span><span className="text-white/50">{volume}</span></div>)}</Card></main></Shell>; }
