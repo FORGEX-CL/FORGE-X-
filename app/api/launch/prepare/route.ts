@@ -1,24 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, Keypair, SystemProgram, Transaction, PublicKey } from "@solana/web3.js";
-import { createMint } from "@solana/spl-token";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { buildTokenLaunchTransaction } from "@/lib/token-launch";
 
 const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => null);
-  if (!body?.payer || !Number.isInteger(body?.decimals) || body.decimals < 0 || body.decimals > 9) {
-    return NextResponse.json({ error: "payer and valid decimals are required" }, { status: 400 });
-  }
   try {
+    const body = await request.json();
     const payer = new PublicKey(body.payer);
     const connection = new Connection(RPC, "confirmed");
-    const mint = Keypair.generate();
-    const lamports = await connection.getMinimumBalanceForRentExemption(82);
-    const transaction = new Transaction().add(
-      SystemProgram.createAccount({ fromPubkey: payer, newAccountPubkey: mint.publicKey, lamports, space: 82, programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") })
-    );
-    return NextResponse.json({ mintPublicKey: mint.publicKey.toBase58(), transaction: transaction.serializeMessage().toString("base64"), network: "devnet", note: "Mint initialization instructions must be added before signing." });
-  } catch {
-    return NextResponse.json({ error: "Unable to prepare launch transaction" }, { status: 400 });
+    const result = await buildTokenLaunchTransaction(connection, payer, {
+      name: String(body.name || ""), symbol: String(body.symbol || "").toUpperCase(),
+      decimals: Number(body.decimals), supply: BigInt(body.supply),
+      revokeMintAuthority: Boolean(body.revokeMintAuthority),
+      revokeFreezeAuthority: Boolean(body.revokeFreezeAuthority),
+    });
+    return NextResponse.json({ network: "devnet", mint: result.mint, associatedTokenAccount: result.associatedTokenAccount, transaction: result.transaction.serialize({ requireAllSignatures: false }).toString("base64"), lastValidBlockHeight: result.lastValidBlockHeight });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare token launch" }, { status: 400 });
   }
 }
