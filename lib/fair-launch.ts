@@ -1,32 +1,54 @@
 export const FORGE_X_SUPPLY = 1_000_000_000n;
-export const FORGE_X_SCALE = 1_000_000n;
+export const FORGE_X_DECIMALS = 9;
 
 export type FairLaunchConfig = {
-  virtualSol: bigint;
-  virtualTokens: bigint;
+  virtualSolReserve: bigint;
+  virtualTokenReserve: bigint;
   graduationSol: bigint;
-  developerBuyLamports: bigint;
+  developerMinBuy: bigint;
+  launchFeeLamports: bigint;
+  tradeFeeBps: bigint;
 };
 
-export function validateFairLaunch(config: FairLaunchConfig) {
-  if (config.virtualSol <= 0n || config.virtualTokens <= 0n) throw new Error("Bonding-curve virtual reserves must be positive");
-  if (config.graduationSol <= 0n) throw new Error("Graduation target must be positive");
-  if (config.developerBuyLamports <= 0n) throw new Error("Developer first buy is required");
-  return true;
+export const DEFAULT_FAIR_LAUNCH: FairLaunchConfig = {
+  virtualSolReserve: 30_000_000_000n,
+  virtualTokenReserve: FORGE_X_SUPPLY * 1_000_000_000n,
+  graduationSol: 85_000_000_000n,
+  developerMinBuy: 500_000_000n,
+  launchFeeLamports: 20_000_000n,
+  tradeFeeBps: 50n,
+};
+
+function assertPositive(value: bigint, label: string) {
+  if (value <= 0n) throw new Error(`${label} must be greater than zero`);
 }
 
-// Constant-product reference curve used by the application layer.
-// This is intentionally pure math: no funds move here. On-chain settlement
-// must enforce the same invariants in the launch program before Mainnet use.
-export function quoteBuy(solIn: bigint, virtualSol: bigint, virtualTokens: bigint) {
-  if (solIn <= 0n || virtualSol <= 0n || virtualTokens <= 0n) throw new Error("Invalid curve inputs");
-  const k = virtualSol * virtualTokens;
-  const newSol = virtualSol + solIn;
-  const newTokens = k / newSol;
-  return virtualTokens - newTokens;
+export function quoteBuy(solIn: bigint, virtualSolReserve: bigint, virtualTokenReserve: bigint) {
+  assertPositive(solIn, "solIn"); assertPositive(virtualSolReserve, "virtualSolReserve"); assertPositive(virtualTokenReserve, "virtualTokenReserve");
+  const tokenOut = (virtualTokenReserve * solIn) / (virtualSolReserve + solIn);
+  if (tokenOut <= 0n || tokenOut >= virtualTokenReserve) throw new Error("Invalid curve quote");
+  return tokenOut;
 }
 
-export function currentPrice(virtualSol: bigint, virtualTokens: bigint) {
-  if (virtualSol <= 0n || virtualTokens <= 0n) throw new Error("Invalid reserves");
-  return { numerator: virtualSol, denominator: virtualTokens };
+export function quoteSell(tokenIn: bigint, virtualSolReserve: bigint, virtualTokenReserve: bigint) {
+  assertPositive(tokenIn, "tokenIn"); assertPositive(virtualSolReserve, "virtualSolReserve"); assertPositive(virtualTokenReserve, "virtualTokenReserve");
+  if (tokenIn >= virtualTokenReserve) throw new Error("Sell exceeds curve reserve");
+  return (virtualSolReserve * tokenIn) / (virtualTokenReserve + tokenIn);
+}
+
+export function applyTradeFee(amount: bigint, feeBps: bigint) {
+  if (amount < 0n || feeBps < 0n || feeBps > 10_000n) throw new Error("Invalid fee");
+  return (amount * feeBps) / 10_000n;
+}
+
+export function canOpenPublicTrading(developerBuy: bigint, config = DEFAULT_FAIR_LAUNCH) {
+  return developerBuy >= config.developerMinBuy;
+}
+
+export function hasGraduated(realSolRaised: bigint, config = DEFAULT_FAIR_LAUNCH) {
+  return realSolRaised >= config.graduationSol;
+}
+
+export function fairLaunchRules() {
+  return { supply: FORGE_X_SUPPLY, decimals: FORGE_X_DECIMALS, fixedSupply: true, developerFirstBuyRequired: true, mintAuthority: null, freezeAuthority: null, metadataUpdateAuthorityAfterFinalization: null } as const;
 }
