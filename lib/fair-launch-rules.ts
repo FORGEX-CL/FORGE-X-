@@ -27,3 +27,17 @@ export function calculateTradingFee(lamports: bigint): bigint {
   if (lamports < 0n) throw new Error("Amount cannot be negative");
   return (lamports * BigInt(FORGE_X_FAIR_LAUNCH.tradingFeeBps)) / 10_000n;
 }
+
+export type FairLaunchInput = { name: string; symbol: string; metadataUri: string };
+
+export function validateFairLaunchInput(input: FairLaunchInput) {
+  if (!input.name.trim()) throw new Error("Token name is required");
+  if (!input.symbol.trim()) throw new Error("Token symbol is required");
+  if (!input.metadataUri.trim()) throw new Error("Metadata URI is required");
+  return {
+    ...FORGE_X_FAIR_LAUNCH,
+    name: input.name.trim(),
+    symbol: input.symbol.trim().toUpperCase(),
+    metadataUri: input.metadataUri.trim(),
+  };
+}
