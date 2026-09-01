@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:fair-launch": "cargo test --manifest-path programs/forge-x-fair-launch/Cargo.toml"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
@@ -24,6 +25,7 @@
     "@types/react-dom": "latest",
     "eslint": "latest",
     "eslint-config-next": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "eslint-config-next": "latest"
   }
 }
