@@ -62,7 +62,6 @@ impl State {
             developer_bought_lamports: u64::from_le_bytes(data[34..42].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             real_sol_raised: u64::from_le_bytes(data[42..50].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             virtual_sol_reserve: u64::from_le_bytes(data[50..58].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
-            virtual_token_reserve: u64::from_le_bytes(data[58..66].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             graduation_sol: u64::from_le_bytes(data[66..74].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             created_at: i64::from_le_bytes(data[74..82].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
         })
@@ -83,7 +82,6 @@ pub fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], instru
 
 fn initialize<'a, I>(program_id: &Pubkey, it: &mut I, data: &[u8]) -> ProgramResult
 where I: Iterator<Item = &'a AccountInfo<'a>> {
-    // state_pda, mint, developer/payer, system_program
     if data.len() != 41 { return Err(ProgramError::InvalidInstructionData); }
     let state_account = next_account_info(it)?;
     let mint_account = next_account_info(it)?;
@@ -98,27 +96,13 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     if developer.key != &developer_key { return Err(ProgramError::InvalidArgument); }
     let graduation_sol = u64::from_le_bytes(data[33..41].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
     if graduation_sol == 0 { return Err(ProgramError::InvalidArgument); }
-
     if state_account.owner == &system_program::id() {
         let rent = Rent::get()?.minimum_balance(State::LEN);
-        invoke_signed(
-            &system_instruction::create_account(developer.key, state_account.key, rent, State::LEN as u64, program_id),
-            &[developer.clone(), state_account.clone(), system.clone()],
-            &[&[STATE_SEED, mint_account.key.as_ref(), &[bump]]],
-        )?;
+        invoke_signed(&system_instruction::create_account(developer.key, state_account.key, rent, State::LEN as u64, program_id), &[developer.clone(), state_account.clone(), system.clone()], &[&[STATE_SEED, mint_account.key.as_ref(), &[bump]]])?;
     }
     if state_account.owner != program_id || state_account.data_len() < State::LEN { return Err(ProgramError::InvalidAccountData); }
     if state_account.try_borrow_data()?[0] != 0 { return Err(ProgramError::AccountAlreadyInitialized); }
-    let state = State {
-        developer: *developer.key,
-        status: STATUS_WAITING_FOR_DEV_BUY,
-        developer_bought_lamports: 0,
-        real_sol_raised: 0,
-        virtual_sol_reserve: 1_000_000_000,
-        virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS,
-        graduation_sol,
-        created_at: Clock::get()?.unix_timestamp,
-    };
+    let state = State { developer: *developer.key, status: STATUS_WAITING_FOR_DEV_BUY, developer_bought_lamports: 0, real_sol_raised: 0, virtual_sol_reserve: 1_000_000_000, virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS, graduation_sol, created_at: Clock::get()?.unix_timestamp };
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
     Ok(())
 }
@@ -156,7 +140,6 @@ fn validate_token_accounts(mint: &AccountInfo, vault: &AccountInfo, user: &Accou
 
 fn buy<'a, I>(program_id: &Pubkey, it: &mut I, data: &[u8]) -> ProgramResult
 where I: Iterator<Item = &'a AccountInfo<'a>> {
-    // state, mint, buyer, buyer_token, token_vault, fee_receiver, system_program, token_program
     let state_account = next_account_info(it)?; let mint = next_account_info(it)?; let buyer = next_account_info(it)?; let buyer_token = next_account_info(it)?; let token_vault = next_account_info(it)?; let fee_receiver = next_account_info(it)?; let system = next_account_info(it)?; let token_program = next_account_info(it)?;
     if !buyer.is_signer || !buyer.is_writable || !state_account.is_writable || !token_vault.is_writable || !buyer_token.is_writable || !fee_receiver.is_writable || !system_program::check_id(system.key) || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
     let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
@@ -181,10 +164,10 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
 
 fn sell<'a, I>(program_id: &Pubkey, it: &mut I, data: &[u8]) -> ProgramResult
 where I: Iterator<Item = &'a AccountInfo<'a>> {
-    // state, mint, seller, seller_token, token_vault, fee_receiver, token_program
-    let state_account = next_account_info(it)?; let mint = next_account_info(it)?; let seller = next_account_info(it)?; let seller_token = next_account_info(it)?; let token_vault = next_account_info(it)?; let fee_receiver = next_account_info(it)?; let token_program = next_account_info(it)?;
-    if !seller.is_signer || !seller.is_writable || !state_account.is_writable || !seller_token.is_writable || !token_vault.is_writable || !fee_receiver.is_writable || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
-    let (expected_state, _) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
+    // state, mint, seller, seller_token, token_vault, fee_receiver, system_program, token_program
+    let state_account = next_account_info(it)?; let mint = next_account_info(it)?; let seller = next_account_info(it)?; let seller_token = next_account_info(it)?; let token_vault = next_account_info(it)?; let fee_receiver = next_account_info(it)?; let system = next_account_info(it)?; let token_program = next_account_info(it)?;
+    if !seller.is_signer || !seller.is_writable || !state_account.is_writable || !seller_token.is_writable || !token_vault.is_writable || !fee_receiver.is_writable || !system_program::check_id(system.key) || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
+    let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
     if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
     let (_, seller_account) = validate_token_accounts(mint, token_vault, seller, seller_token, program_id)?;
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
@@ -195,9 +178,12 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     if state_account.lamports().checked_sub(total_out).unwrap_or(0) < rent_floor { return Err(ProgramError::InsufficientFunds); }
     let token_ix = token_instruction::transfer_checked(&spl_token::id(), seller_token.key, mint.key, token_vault.key, seller.key, &[], token_in, DECIMALS).map_err(|_| ProgramError::InvalidInstructionData)?;
     invoke(&token_ix, &[seller_token.clone(), mint.clone(), token_vault.clone(), seller.clone()])?;
-    **state_account.try_borrow_mut_lamports()? = state_account.lamports().checked_sub(total_out).ok_or(ProgramError::ArithmeticOverflow)?;
-    **seller.try_borrow_mut_lamports()? = seller.lamports().checked_add(net_sol).ok_or(ProgramError::ArithmeticOverflow)?;
-    **fee_receiver.try_borrow_mut_lamports()? = fee_receiver.lamports().checked_add(trade_fee).ok_or(ProgramError::ArithmeticOverflow)?;
+    if net_sol > 0 {
+        invoke_signed(&system_instruction::transfer(state_account.key, seller.key, net_sol), &[state_account.clone(), seller.clone(), system.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?;
+    }
+    if trade_fee > 0 {
+        invoke_signed(&system_instruction::transfer(state_account.key, fee_receiver.key, trade_fee), &[state_account.clone(), fee_receiver.clone(), system.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?;
+    }
     state.real_sol_raised = state.real_sol_raised.checked_sub(gross_sol).ok_or(ProgramError::ArithmeticOverflow)?;
     state.virtual_sol_reserve = state.virtual_sol_reserve.checked_sub(gross_sol).ok_or(ProgramError::ArithmeticOverflow)?;
     state.virtual_token_reserve = state.virtual_token_reserve.checked_add(token_in).ok_or(ProgramError::ArithmeticOverflow)?;
