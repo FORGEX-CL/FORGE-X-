@@ -1,4 +1,5 @@
 import { Shell, SectionTitle, Card } from "../components/Shell";
+import { WalletButton } from "../components/WalletButton";
 
 const steps = [
   ["01", "Token details", "Name, symbol, description and logo."],
@@ -20,12 +21,15 @@ export default function Launch() {
   return (
     <Shell>
       <main className="mx-auto max-w-6xl px-5 py-12 lg:px-8">
-        <div className="mb-10 flex items-center gap-5">
-          <img src="/forge-x-mark.svg" alt="FORGE X" className="h-20 w-20 rounded-2xl" />
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f5c542]">FORGE X</p>
-            <h1 className="mt-1 text-3xl font-black tracking-tight">Fair Launch</h1>
+        <div className="mb-10 flex items-center justify-between gap-5">
+          <div className="flex items-center gap-5">
+            <img src="/forge-x-mark.svg" alt="FORGE X" className="h-20 w-20 rounded-2xl" />
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f5c542]">FORGE X</p>
+              <h1 className="mt-1 text-3xl font-black tracking-tight">Fair Launch</h1>
+            </div>
           </div>
+          <WalletButton />
         </div>
 
         <SectionTitle
