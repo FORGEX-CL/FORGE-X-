@@ -1,15 +1,22 @@
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
+    clock::Clock,
     entrypoint,
     entrypoint::ProgramResult,
-    msg,
+    program::{invoke, invoke_signed},
     program_error::ProgramError,
     pubkey::Pubkey,
+    rent::Rent,
+    system_instruction,
+    system_program,
+    sysvar::Sysvar,
 };
+use spl_token::{instruction as token_instruction, state::{Account as TokenAccount, Mint}};
+use solana_program::program_pack::Pack;
 
 entrypoint!(process_instruction);
 
-const STATE_VERSION: u8 = 1;
+const STATE_VERSION: u8 = 2;
 const STATUS_WAITING_FOR_DEV_BUY: u8 = 0;
 const STATUS_LIVE: u8 = 1;
 const STATUS_GRADUATED: u8 = 2;
@@ -17,6 +24,7 @@ const SUPPLY: u64 = 1_000_000_000;
 const DECIMALS: u8 = 9;
 const TRADE_FEE_BPS: u64 = 50;
 const BPS_DENOMINATOR: u64 = 10_000;
+const STATE_SEED: &[u8] = b"launch";
 
 #[derive(Clone, Copy)]
 struct State {
@@ -27,15 +35,14 @@ struct State {
     virtual_sol_reserve: u64,
     virtual_token_reserve: u64,
     graduation_sol: u64,
+    created_at: i64,
 }
 
 impl State {
-    const LEN: usize = 1 + 32 + 1 + 8 + 8 + 8 + 8 + 8;
+    const LEN: usize = 1 + 32 + 1 + 8 + 8 + 8 + 8 + 8 + 8;
 
     fn pack(&self, data: &mut [u8]) -> Result<(), ProgramError> {
-        if data.len() < Self::LEN {
-            return Err(ProgramError::AccountDataTooSmall);
-        }
+        if data.len() < Self::LEN { return Err(ProgramError::AccountDataTooSmall); }
         data[0] = STATE_VERSION;
         data[1..33].copy_from_slice(self.developer.as_ref());
         data[33] = self.status;
@@ -44,168 +51,183 @@ impl State {
         data[50..58].copy_from_slice(&self.virtual_sol_reserve.to_le_bytes());
         data[58..66].copy_from_slice(&self.virtual_token_reserve.to_le_bytes());
         data[66..74].copy_from_slice(&self.graduation_sol.to_le_bytes());
+        data[74..82].copy_from_slice(&self.created_at.to_le_bytes());
         Ok(())
     }
 
     fn unpack(data: &[u8]) -> Result<Self, ProgramError> {
-        if data.len() < Self::LEN || data[0] != STATE_VERSION {
-            return Err(ProgramError::InvalidAccountData);
-        }
-        let developer = Pubkey::new_from_array(data[1..33].try_into().map_err(|_| ProgramError::InvalidAccountData)?);
+        if data.len() < Self::LEN || data[0] != STATE_VERSION { return Err(ProgramError::InvalidAccountData); }
         Ok(Self {
-            developer,
+            developer: Pubkey::new_from_array(data[1..33].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             status: data[33],
             developer_bought_lamports: u64::from_le_bytes(data[34..42].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             real_sol_raised: u64::from_le_bytes(data[42..50].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             virtual_sol_reserve: u64::from_le_bytes(data[50..58].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             virtual_token_reserve: u64::from_le_bytes(data[58..66].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             graduation_sol: u64::from_le_bytes(data[66..74].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
+            created_at: i64::from_le_bytes(data[74..82].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
         })
     }
 }
 
-pub fn process_instruction(
-    _program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    instruction_data: &[u8],
-) -> ProgramResult {
-    let mut accounts_iter = accounts.iter();
-    let state_account = next_account_info(&mut accounts_iter)?;
-
-    if !state_account.is_writable {
-        return Err(ProgramError::InvalidAccountData);
-    }
-
-    if instruction_data.is_empty() {
-        return Err(ProgramError::InvalidInstructionData);
-    }
-
+pub fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], instruction_data: &[u8]) -> ProgramResult {
+    if instruction_data.is_empty() { return Err(ProgramError::InvalidInstructionData); }
+    let mut it = accounts.iter();
     match instruction_data[0] {
-        // Initialize: [0][developer 32][graduation_sol u64]
-        0 => initialize(state_account, instruction_data),
-        // Developer buy: [1][gross_lamports u64]
-        1 => developer_buy(state_account, accounts_iter, instruction_data),
-        // Public buy: [2][gross_lamports u64]
-        2 => public_buy(state_account, accounts_iter, instruction_data),
-        // Graduate: [3]
-        3 => graduate(state_account),
+        0 => initialize(program_id, &mut it, instruction_data),
+        1 => buy(program_id, &mut it, instruction_data),
+        2 => sell(program_id, &mut it, instruction_data),
+        3 => graduate(program_id, &mut it),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }
 
-fn initialize(state_account: &AccountInfo, data: &[u8]) -> ProgramResult {
-    if data.len() != 1 + 32 + 8 {
-        return Err(ProgramError::InvalidInstructionData);
-    }
-    let developer = Pubkey::new_from_array(data[1..33].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
+fn initialize<'a, I>(program_id: &Pubkey, it: &mut I, data: &[u8]) -> ProgramResult
+where I: Iterator<Item = &'a AccountInfo<'a>> {
+    if data.len() != 1 + 32 + 8 { return Err(ProgramError::InvalidInstructionData); }
+    let state_account = next_account_info(it)?;
+    let mint_account = next_account_info(it)?;
+    let developer = next_account_info(it)?;
+    if !state_account.is_writable || !developer.is_signer { return Err(ProgramError::InvalidArgument); }
+    if state_account.owner != program_id { return Err(ProgramError::IncorrectProgramId); }
+    let (expected_state, _) = Pubkey::find_program_address(&[STATE_SEED, mint_account.key.as_ref()], program_id);
+    if state_account.key != &expected_state { return Err(ProgramError::InvalidSeeds); }
+    let mint = Mint::unpack(&mint_account.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
+    if mint.decimals != DECIMALS { return Err(ProgramError::InvalidArgument); }
+    let developer_key = Pubkey::new_from_array(data[1..33].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
+    if developer.key != &developer_key { return Err(ProgramError::InvalidArgument); }
     let graduation_sol = u64::from_le_bytes(data[33..41].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
-    if graduation_sol == 0 {
-        return Err(ProgramError::InvalidArgument);
-    }
-
+    if graduation_sol == 0 { return Err(ProgramError::InvalidArgument); }
+    if state_account.data_len() < State::LEN { return Err(ProgramError::AccountDataTooSmall); }
     let state = State {
-        developer,
+        developer: *developer.key,
         status: STATUS_WAITING_FOR_DEV_BUY,
         developer_bought_lamports: 0,
         real_sol_raised: 0,
-        // Initial virtual reserves are protocol constants for the first implementation.
         virtual_sol_reserve: 1_000_000_000,
-        virtual_token_reserve: SUPPLY * 10u64.pow(DECIMALS as u32),
+        virtual_token_reserve: SUPPLY.checked_mul(10u64.pow(DECIMALS as u32)).ok_or(ProgramError::ArithmeticOverflow)?,
         graduation_sol,
+        created_at: Clock::get()?.unix_timestamp,
     };
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
-    msg!("FORGE X Fair Launch initialized");
     Ok(())
 }
 
-fn read_lamports(data: &[u8]) -> Result<u64, ProgramError> {
-    if data.len() != 1 + 8 {
-        return Err(ProgramError::InvalidInstructionData);
-    }
-    Ok(u64::from_le_bytes(data[1..9].try_into().map_err(|_| ProgramError::InvalidInstructionData)?))
+fn parse_amount(data: &[u8]) -> Result<u64, ProgramError> {
+    if data.len() != 9 { return Err(ProgramError::InvalidInstructionData); }
+    let amount = u64::from_le_bytes(data[1..9].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
+    if amount == 0 { return Err(ProgramError::InvalidArgument); }
+    Ok(amount)
 }
 
-fn apply_fee(amount: u64) -> Result<(u64, u64), ProgramError> {
-    let fee = amount.checked_mul(TRADE_FEE_BPS).ok_or(ProgramError::ArithmeticOverflow)? / BPS_DENOMINATOR;
-    let net = amount.checked_sub(fee).ok_or(ProgramError::ArithmeticOverflow)?;
-    Ok((fee, net))
+fn fee(amount: u64) -> Result<(u64, u64), ProgramError> {
+    let f = amount.checked_mul(TRADE_FEE_BPS).ok_or(ProgramError::ArithmeticOverflow)? / BPS_DENOMINATOR;
+    Ok((f, amount.checked_sub(f).ok_or(ProgramError::ArithmeticOverflow)?))
 }
 
-fn buy_quote(net_sol: u64, virtual_sol: u64, virtual_tokens: u64) -> Result<u64, ProgramError> {
-    let k = (virtual_sol as u128)
-        .checked_mul(virtual_tokens as u128)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
-    let next_sol = (virtual_sol as u128)
-        .checked_add(net_sol as u128)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
-    let next_tokens = k / next_sol;
-    let out = (virtual_tokens as u128)
-        .checked_sub(next_tokens)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
-    u64::try_from(out).map_err(|_| ProgramError::ArithmeticOverflow)
+fn buy_quote(net: u64, vs: u64, vt: u64) -> Result<u64, ProgramError> {
+    let k = (vs as u128).checked_mul(vt as u128).ok_or(ProgramError::ArithmeticOverflow)?;
+    let next_vs = (vs as u128).checked_add(net as u128).ok_or(ProgramError::ArithmeticOverflow)?;
+    let next_vt = k / next_vs;
+    u64::try_from((vt as u128).checked_sub(next_vt).ok_or(ProgramError::ArithmeticOverflow)?).map_err(|_| ProgramError::ArithmeticOverflow)
 }
 
-fn developer_buy<'a, I>(state_account: &AccountInfo<'a>, mut accounts: I, data: &[u8]) -> ProgramResult
-where
-    I: Iterator<Item = &'a AccountInfo<'a>>,
-{
-    let buyer = next_account_info(&mut accounts)?;
-    if !buyer.is_signer {
-        return Err(ProgramError::MissingRequiredSignature);
-    }
+fn sell_quote(token_in: u64, vs: u64, vt: u64) -> Result<u64, ProgramError> {
+    if token_in == 0 || token_in >= vt { return Err(ProgramError::InvalidArgument); }
+    let numerator = (token_in as u128).checked_mul(vs as u128).ok_or(ProgramError::ArithmeticOverflow)?;
+    let denominator = (vt as u128).checked_add(token_in as u128).ok_or(ProgramError::ArithmeticOverflow)?;
+    u64::try_from(numerator / denominator).map_err(|_| ProgramError::ArithmeticOverflow)
+}
+
+fn validate_token_accounts(mint: &AccountInfo, vault: &AccountInfo, user: &AccountInfo, user_token: &AccountInfo, program_id: &Pubkey) -> Result<(TokenAccount, TokenAccount), ProgramError> {
+    if vault.owner != &spl_token::id() || user_token.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
+    let v = TokenAccount::unpack(&vault.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
+    let u = TokenAccount::unpack(&user_token.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
+    if v.mint != *mint.key || u.mint != *mint.key || v.owner != *Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id).0 || u.owner != *user.key { return Err(ProgramError::InvalidArgument); }
+    Ok((v, u))
+}
+
+fn buy<'a, I>(program_id: &Pubkey, it: &mut I, data: &[u8]) -> ProgramResult
+where I: Iterator<Item = &'a AccountInfo<'a>> {
+    // state, mint, buyer, buyer_token, token_vault, fee_receiver, system_program, token_program
+    let state_account = next_account_info(it)?;
+    let mint = next_account_info(it)?;
+    let buyer = next_account_info(it)?;
+    let buyer_token = next_account_info(it)?;
+    let token_vault = next_account_info(it)?;
+    let fee_receiver = next_account_info(it)?;
+    let system = next_account_info(it)?;
+    let token_program = next_account_info(it)?;
+    if !buyer.is_signer || !buyer.is_writable || !state_account.is_writable || !token_vault.is_writable || !buyer_token.is_writable || !fee_receiver.is_writable || !system_program::check_id(system.key) || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
+    let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
+    if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
+    let (vault, _) = validate_token_accounts(mint, token_vault, buyer, buyer_token, program_id)?;
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
-    if state.status != STATUS_WAITING_FOR_DEV_BUY || buyer.key != &state.developer {
-        return Err(ProgramError::InvalidArgument);
-    }
-    let gross = read_lamports(data)?;
-    if gross == 0 {
-        return Err(ProgramError::InvalidArgument);
-    }
-    let (_fee, net) = apply_fee(gross)?;
-    let _tokens_out = buy_quote(net, state.virtual_sol_reserve, state.virtual_token_reserve)?;
-    state.developer_bought_lamports = state.developer_bought_lamports.checked_add(gross).ok_or(ProgramError::ArithmeticOverflow)?;
+    if state.status == STATUS_GRADUATED { return Err(ProgramError::InvalidArgument); }
+    if state.status == STATUS_WAITING_FOR_DEV_BUY && buyer.key != &state.developer { return Err(ProgramError::InvalidArgument); }
+    let gross = parse_amount(data)?;
+    let (trade_fee, net) = fee(gross)?;
+    let tokens_out = buy_quote(net, state.virtual_sol_reserve, state.virtual_token_reserve)?;
+    if tokens_out > vault.amount { return Err(ProgramError::InsufficientFunds); }
+
+    invoke(&system_instruction::transfer(buyer.key, state_account.key, net), &[buyer.clone(), state_account.clone(), system.clone()])?;
+    if trade_fee > 0 { invoke(&system_instruction::transfer(buyer.key, fee_receiver.key, trade_fee), &[buyer.clone(), fee_receiver.clone(), system.clone()])?; }
+    let token_ix = token_instruction::transfer_checked(&spl_token::id(), token_vault.key, mint.key, buyer_token.key, state_account.key, &[], tokens_out, DECIMALS).map_err(|_| ProgramError::InvalidInstructionData)?;
+    invoke_signed(&token_ix, &[token_vault.clone(), mint.clone(), buyer_token.clone(), state_account.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?;
+
     state.real_sol_raised = state.real_sol_raised.checked_add(net).ok_or(ProgramError::ArithmeticOverflow)?;
     state.virtual_sol_reserve = state.virtual_sol_reserve.checked_add(net).ok_or(ProgramError::ArithmeticOverflow)?;
-    state.status = STATUS_LIVE;
+    state.virtual_token_reserve = state.virtual_token_reserve.checked_sub(tokens_out).ok_or(ProgramError::ArithmeticOverflow)?;
+    if state.status == STATUS_WAITING_FOR_DEV_BUY { state.developer_bought_lamports = state.developer_bought_lamports.checked_add(gross).ok_or(ProgramError::ArithmeticOverflow)?; state.status = STATUS_LIVE; }
+    if state.real_sol_raised >= state.graduation_sol { state.status = STATUS_GRADUATED; }
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
-    msg!("FORGE X developer first buy accepted");
     Ok(())
 }
 
-fn public_buy<'a, I>(state_account: &AccountInfo<'a>, mut accounts: I, data: &[u8]) -> ProgramResult
-where
-    I: Iterator<Item = &'a AccountInfo<'a>>,
-{
-    let buyer = next_account_info(&mut accounts)?;
-    if !buyer.is_signer {
-        return Err(ProgramError::MissingRequiredSignature);
-    }
+fn sell<'a, I>(program_id: &Pubkey, it: &mut I, data: &[u8]) -> ProgramResult
+where I: Iterator<Item = &'a AccountInfo<'a>> {
+    // state, mint, seller, seller_token, token_vault, fee_receiver, token_program
+    let state_account = next_account_info(it)?;
+    let mint = next_account_info(it)?;
+    let seller = next_account_info(it)?;
+    let seller_token = next_account_info(it)?;
+    let token_vault = next_account_info(it)?;
+    let fee_receiver = next_account_info(it)?;
+    let token_program = next_account_info(it)?;
+    if !seller.is_signer || !seller.is_writable || !state_account.is_writable || !seller_token.is_writable || !token_vault.is_writable || !fee_receiver.is_writable || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
+    let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
+    if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
+    let (vault, seller_account) = validate_token_accounts(mint, token_vault, seller, seller_token, program_id)?;
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
-    if state.status != STATUS_LIVE {
-        return Err(ProgramError::InvalidArgument);
-    }
-    let gross = read_lamports(data)?;
-    if gross == 0 {
-        return Err(ProgramError::InvalidArgument);
-    }
-    let (_fee, net) = apply_fee(gross)?;
-    let _tokens_out = buy_quote(net, state.virtual_sol_reserve, state.virtual_token_reserve)?;
-    state.real_sol_raised = state.real_sol_raised.checked_add(net).ok_or(ProgramError::ArithmeticOverflow)?;
-    state.virtual_sol_reserve = state.virtual_sol_reserve.checked_add(net).ok_or(ProgramError::ArithmeticOverflow)?;
-    if state.real_sol_raised >= state.graduation_sol {
-        state.status = STATUS_GRADUATED;
-    }
+    if state.status != STATUS_LIVE { return Err(ProgramError::InvalidArgument); }
+    let token_in = parse_amount(data)?;
+    if token_in > seller_account.amount { return Err(ProgramError::InsufficientFunds); }
+    let gross_sol = sell_quote(token_in, state.virtual_sol_reserve, state.virtual_token_reserve)?;
+    let (trade_fee, net_sol) = fee(gross_sol)?;
+    let rent_floor = Rent::get()?.minimum_balance(State::LEN);
+    if state_account.lamports().checked_sub(net_sol).and_then(|v| v.checked_sub(trade_fee)).unwrap_or(0) < rent_floor { return Err(ProgramError::InsufficientFunds); }
+
+    let token_ix = token_instruction::transfer_checked(&spl_token::id(), seller_token.key, mint.key, token_vault.key, seller.key, &[], token_in, DECIMALS).map_err(|_| ProgramError::InvalidInstructionData)?;
+    invoke(&token_ix, &[seller_token.clone(), mint.clone(), token_vault.clone(), seller.clone()])?;
+    if net_sol > 0 { invoke_signed(&system_instruction::transfer(state_account.key, seller.key, net_sol), &[state_account.clone(), seller.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?; }
+    if trade_fee > 0 { invoke_signed(&system_instruction::transfer(state_account.key, fee_receiver.key, trade_fee), &[state_account.clone(), fee_receiver.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?; }
+
+    state.real_sol_raised = state.real_sol_raised.checked_sub(gross_sol).ok_or(ProgramError::ArithmeticOverflow)?;
+    state.virtual_sol_reserve = state.virtual_sol_reserve.checked_sub(gross_sol).ok_or(ProgramError::ArithmeticOverflow)?;
+    state.virtual_token_reserve = state.virtual_token_reserve.checked_add(token_in).ok_or(ProgramError::ArithmeticOverflow)?;
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
-    msg!("FORGE X public buy accepted");
+    let _ = vault;
     Ok(())
 }
 
-fn graduate(state_account: &AccountInfo) -> ProgramResult {
+fn graduate<'a, I>(program_id: &Pubkey, it: &mut I) -> ProgramResult
+where I: Iterator<Item = &'a AccountInfo<'a>> {
+    let state_account = next_account_info(it)?;
+    let mint = next_account_info(it)?;
+    let (expected_state, _) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
+    if state_account.key != &expected_state || state_account.owner != program_id || !state_account.is_writable { return Err(ProgramError::InvalidSeeds); }
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
-    if state.status != STATUS_GRADUATED {
-        return Err(ProgramError::InvalidArgument);
-    }
-    msg!("FORGE X Fair Launch ready for liquidity migration");
+    if state.status != STATUS_GRADUATED { return Err(ProgramError::InvalidArgument); }
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
     Ok(())
 }
@@ -213,17 +235,8 @@ fn graduate(state_account: &AccountInfo) -> ProgramResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn fee_is_half_percent() {
-        let (fee, net) = apply_fee(100_000).unwrap();
-        assert_eq!(fee, 500);
-        assert_eq!(net, 99_500);
-    }
-
+    fn fee_is_half_percent() { let (f, n) = fee(100_000).unwrap(); assert_eq!(f, 500); assert_eq!(n, 99_500); }
     #[test]
-    fn curve_quote_is_positive() {
-        let out = buy_quote(100_000, 1_000_000_000, SUPPLY * 10u64.pow(DECIMALS as u32)).unwrap();
-        assert!(out > 0);
-    }
+    fn curve_buy_and_sell_are_positive() { let out = buy_quote(100_000, 1_000_000_000, SUPPLY * 10u64.pow(DECIMALS as u32)).unwrap(); assert!(out > 0); let sol = sell_quote(out, 1_000_100_000, SUPPLY * 10u64.pow(DECIMALS as u32) - out).unwrap(); assert!(sol > 0); }
 }
