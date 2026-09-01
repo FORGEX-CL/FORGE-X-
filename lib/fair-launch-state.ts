@@ -38,7 +38,8 @@ export function applySell(state: FairLaunchState, tokenIn: bigint, config: FairL
   const grossSolOut = quoteSell(tokenIn, state.virtualSolReserve, state.virtualTokenReserve);
   const fee = applyTradeFee(grossSolOut, config.tradeFeeBps);
   const netSolOut = grossSolOut - fee;
-  return { next: { ...state, realSolRaised: state.realSolRaised - grossSolOut, virtualSolReserve: state.virtualSolReserve - grossSolOut, virtualTokenReserve: state.virtualTokenReserve + tokenIn }, fee, grossSolOut, netSolOut };
+  if (netSolOut > state.realSolRaised) throw new Error("Sell exceeds tracked real SOL raised");
+  return { next: { ...state, realSolRaised: state.realSolRaised - netSolOut, virtualSolReserve: state.virtualSolReserve - grossSolOut, virtualTokenReserve: state.virtualTokenReserve + tokenIn }, fee, grossSolOut, netSolOut };
 }
 
 export function statusOf(state: FairLaunchState): FairLaunchStatus {
