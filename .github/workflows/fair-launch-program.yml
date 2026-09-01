@@ -1,0 +1,25 @@
+name: FORGE X Fair Launch Program
+
+on:
+  push:
+    paths:
+      - "programs/forge-x-fair-launch/**"
+      - ".github/workflows/fair-launch-program.yml"
+  pull_request:
+    paths:
+      - "programs/forge-x-fair-launch/**"
+      - ".github/workflows/fair-launch-program.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: programs/forge-x-fair-launch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: programs/forge-x-fair-launch
+      - run: cargo test --locked
