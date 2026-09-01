@@ -9,6 +9,7 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 solana-program = "4.0"
+spl-token = "9.0"
 
 [dev-dependencies]
 solana-program-test = "4.0"
