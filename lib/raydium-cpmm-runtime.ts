@@ -1,6 +1,6 @@
 import { PublicKey, Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
 import BN from "bn.js";
-import { Raydium, DEVNET_PROGRAM_ID, TxVersion } from "@raydium-io/raydium-sdk-v2";
+import { Raydium, DEVNET_PROGRAM_ID, TxVersion, getCpmmPdaAmmConfigId } from "@raydium-io/raydium-sdk-v2";
 
 export type WalletSigner = {
   publicKey: PublicKey;
@@ -36,7 +36,12 @@ export async function createDevnetCpmmPool(input: CreateDevnetCpmmPoolInput) {
   const feeConfigs = await raydium.api.getCpmmConfigs();
   if (!feeConfigs.length) throw new Error("No Raydium Devnet CPMM fee configuration available");
 
-  const feeConfig = { ...feeConfigs[0], id: new PublicKey(feeConfigs[0].id) };
+  // Raydium's Devnet configs need their PDA-derived IDs rather than blindly
+  // reusing the published config ID.
+  const feeConfig = {
+    ...feeConfigs[0],
+    id: getCpmmPdaAmmConfigId(DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM, feeConfigs[0].index).publicKey.toBase58(),
+  };
 
   const { execute, extInfo } = await raydium.cpmm.createPool({
     programId: DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM,
