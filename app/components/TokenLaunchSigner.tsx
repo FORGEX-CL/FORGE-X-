@@ -4,6 +4,23 @@ import { useState } from "react";
 import { Connection, Transaction } from "@solana/web3.js";
 
 const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
+const POLL_MS = 500;
+const TIMEOUT_MS = 90_000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForSignature(connection: Connection, signature: string) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < TIMEOUT_MS) {
+    const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+    if (status?.err) throw new Error(`Launch transaction failed: ${JSON.stringify(status.err)}`);
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
+    await sleep(POLL_MS);
+  }
+  throw new Error("Timed out waiting for launch confirmation");
+}
 
 export function TokenLaunchSigner() {
   const [status, setStatus] = useState("idle");
@@ -21,12 +38,19 @@ export function TokenLaunchSigner() {
       if (!response.ok) throw new Error(data.error || "Unable to prepare launch");
       setMint(data.mint); setStatus("signing");
       const tx = Transaction.from(Buffer.from(data.transaction, "base64"));
+
+      // Refresh immediately before the wallet prompt so the user signs a fresh transaction.
+      const connection = new Connection(RPC, "confirmed");
+      const latest = await connection.getLatestBlockhash("confirmed");
+      tx.recentBlockhash = latest.blockhash;
+      tx.lastValidBlockHeight = latest.lastValidBlockHeight;
+      tx.feePayer = tx.feePayer ?? wallet.publicKey;
+
       const signed = await wallet.signTransaction(tx);
       setStatus("confirming");
-      const connection = new Connection(RPC, "confirmed");
-      const txid = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 2 });
+      const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
       setSignature(txid);
-      await connection.confirmTransaction({ signature: txid, blockhash: tx.recentBlockhash!, lastValidBlockHeight: data.lastValidBlockHeight }, "confirmed");
+      await waitForSignature(connection, txid);
       setStatus("confirmed");
     } catch (e) { setStatus("failed"); setError(e instanceof Error ? e.message : "Launch failed"); }
   }
