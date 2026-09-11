@@ -4,6 +4,23 @@ import { useState } from "react";
 import { Connection, VersionedTransaction } from "@solana/web3.js";
 
 const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+const POLL_MS = 500;
+const TIMEOUT_MS = 90_000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForSignature(connection: Connection, signature: string) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < TIMEOUT_MS) {
+    const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+    if (status?.err) throw new Error(`Swap transaction failed: ${JSON.stringify(status.err)}`);
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
+    await sleep(POLL_MS);
+  }
+  throw new Error("Timed out waiting for swap confirmation");
+}
 
 export function SolanaSwap({ quote }: { quote: any }) {
   const [status, setStatus] = useState<"idle" | "signing" | "confirming" | "confirmed" | "failed">("idle");
@@ -21,9 +38,9 @@ export function SolanaSwap({ quote }: { quote: any }) {
       const signed = await provider.signTransaction(transaction);
       setStatus("confirming");
       const connection = new Connection(RPC, "confirmed");
-      const txid = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 2 });
+      const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
       setSignature(txid);
-      await connection.confirmTransaction({ signature: txid, blockhash: transaction.message.recentBlockhash, lastValidBlockHeight: data.lastValidBlockHeight }, "confirmed");
+      await waitForSignature(connection, txid);
       setStatus("confirmed");
     } catch { setStatus("failed"); }
   }
