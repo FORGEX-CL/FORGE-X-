@@ -22,4 +22,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: programs/forge-x-fair-launch
-      - run: cargo test --locked
+      - run: cargo test
