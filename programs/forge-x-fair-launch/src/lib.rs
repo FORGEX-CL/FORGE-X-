@@ -25,6 +25,7 @@ const DECIMALS: u8 = 9;
 const TOTAL_SUPPLY_BASE_UNITS: u64 = SUPPLY * 1_000_000_000;
 const TRADE_FEE_BPS: u64 = 50;
 const BPS_DENOMINATOR: u64 = 10_000;
+const MIN_DEV_BUY_LAMPORTS: u64 = 500_000_000;
 const STATE_SEED: &[u8] = b"launch";
 
 #[derive(Clone, Copy)]
@@ -148,7 +149,9 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     let (vault, _) = validate_token_accounts(mint, token_vault, buyer, buyer_token, program_id)?;
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
     if state.status == STATUS_GRADUATED || (state.status == STATUS_WAITING_FOR_DEV_BUY && buyer.key != &state.developer) { return Err(ProgramError::InvalidArgument); }
-    let gross = parse_amount(data)?; let (trade_fee, net) = fee(gross)?; let tokens_out = buy_quote(net, state.virtual_sol_reserve, state.virtual_token_reserve)?;
+    let gross = parse_amount(data)?;
+    if state.status == STATUS_WAITING_FOR_DEV_BUY && gross < MIN_DEV_BUY_LAMPORTS { return Err(ProgramError::InvalidArgument); }
+    let (trade_fee, net) = fee(gross)?; let tokens_out = buy_quote(net, state.virtual_sol_reserve, state.virtual_token_reserve)?;
     if tokens_out > vault.amount { return Err(ProgramError::InsufficientFunds); }
     invoke(&system_instruction::transfer(buyer.key, state_account.key, net), &[buyer.clone(), state_account.clone(), system.clone()])?;
     if trade_fee > 0 { invoke(&system_instruction::transfer(buyer.key, fee_receiver.key, trade_fee), &[buyer.clone(), fee_receiver.clone(), system.clone()])?; }
