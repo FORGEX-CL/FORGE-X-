@@ -16,6 +16,9 @@ use spl_token::{instruction as token_instruction, state::{Account as TokenAccoun
 
 entrypoint!(process_instruction);
 
+#[cfg(test)]
+mod tests;
+
 const STATE_VERSION: u8 = 2;
 const STATUS_WAITING_FOR_DEV_BUY: u8 = 0;
 const STATUS_LIVE: u8 = 1;
