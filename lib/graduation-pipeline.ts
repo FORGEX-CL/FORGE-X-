@@ -29,12 +29,28 @@ export function createGraduationPlan(params: {
   };
 }
 
+const POLL_MS = 500;
+const TIMEOUT_MS = 90_000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function waitForGraduationConfirmation(
   connection: Connection,
   signature: string,
 ): Promise<void> {
-  const result = await connection.confirmTransaction(signature, "confirmed");
-  if (result.value.err) throw new Error("Graduation transaction failed on-chain");
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < TIMEOUT_MS) {
+    const status = (await connection.getSignatureStatuses([signature], {
+      searchTransactionHistory: true,
+    })).value[0];
+
+    if (status?.err) throw new Error("Graduation transaction failed on-chain");
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
+    await sleep(POLL_MS);
+  }
+  throw new Error("Timed out waiting for graduation transaction confirmation");
 }
 
 export function assertPoolDestination(address: string): PublicKey {
