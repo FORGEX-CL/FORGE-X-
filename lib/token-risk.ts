@@ -15,17 +15,16 @@ export type TokenRiskResult = {
   flags: string[];
 };
 
-const RESERVED_BRANDS = [
-  "solana",
-  "raydium",
-  "jupiter",
-  "metaplex",
-  "pump",
-  "bonk",
-  "usdc",
-  "usdt",
-  "wrapped solana",
-  "forge x",
+const PROTECTED_BRANDS: Array<{ name: string; domains: string[] }> = [
+  { name: "solana", domains: ["solana.com"] },
+  { name: "raydium", domains: ["raydium.io"] },
+  { name: "jupiter", domains: ["jup.ag", "jupiter.ag"] },
+  { name: "metaplex", domains: ["metaplex.com"] },
+  { name: "pump", domains: ["pump.fun"] },
+  { name: "bonk", domains: ["bonk.fun"] },
+  { name: "usdc", domains: ["circle.com"] },
+  { name: "usdt", domains: ["tether.to"] },
+  { name: "forge x", domains: [] },
 ];
 
 const IMPERSONATION_TERMS = ["official", "real", "original", "support", "admin", "team", "v2", "v3", "2.0", "copy", "clone", "fork"];
@@ -37,7 +36,7 @@ function normalized(value = "") {
 function hostname(url?: string): string | undefined {
   if (!url) return undefined;
   try {
-    return new URL(url).hostname.toLowerCase();
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
   } catch {
     return undefined;
   }
@@ -47,21 +46,30 @@ export function assessTokenRisk(input: TokenRiskInput): TokenRiskResult {
   const name = normalized(input.name);
   const symbol = normalized(input.symbol);
   const description = normalized(input.description);
+  const websiteHost = hostname(input.website);
   const flags: string[] = [];
   let score = 0;
   let impersonation = false;
 
-  for (const brand of RESERVED_BRANDS) {
-    const brandKey = normalized(brand);
+  for (const brand of PROTECTED_BRANDS) {
+    const brandKey = normalized(brand.name);
     if (!brandKey) continue;
-    if (name === brandKey || symbol === brandKey) {
+    const nameCollision = name === brandKey || symbol === brandKey;
+    const lookalikeName = name.includes(brandKey) || symbol.includes(brandKey);
+    if (nameCollision) {
       score += 85;
       impersonation = true;
-      flags.push(`Exact protected-brand collision: ${brand}`);
-    } else if (name.includes(brandKey) || symbol.includes(brandKey)) {
+      flags.push(`Exact protected-brand collision: ${brand.name}`);
+    } else if (lookalikeName) {
       score += 45;
       impersonation = true;
-      flags.push(`Protected-brand name collision: ${brand}`);
+      flags.push(`Protected-brand name collision: ${brand.name}`);
+    }
+
+    if (lookalikeName && brand.domains.length > 0 && websiteHost && !brand.domains.includes(websiteHost)) {
+      score += 25;
+      impersonation = true;
+      flags.push(`Brand-like token uses a non-official ${brand.name} website domain`);
     }
   }
 
@@ -73,15 +81,9 @@ export function assessTokenRisk(input: TokenRiskInput): TokenRiskResult {
     }
   }
 
-  if (input.website) {
-    const host = hostname(input.website);
-    if (!host) {
-      score += 15;
-      flags.push("Website URL could not be parsed");
-    } else if (/^https?:\/\/|^www\./.test(input.website) === false) {
-      score += 5;
-      flags.push("Website uses an unusual URL format");
-    }
+  if (input.website && !websiteHost) {
+    score += 15;
+    flags.push("Website URL could not be parsed");
   }
 
   if (input.socials?.some((value) => !/^https?:\/\//i.test(value))) {
