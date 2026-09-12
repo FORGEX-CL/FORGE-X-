@@ -1,4 +1,4 @@
-import { Connection, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import type { SolanaWalletProvider } from "./wallet-provider";
 
 export type FrontendChainState = {
@@ -16,15 +16,14 @@ export function chainState(status: FrontendChainState["status"], extra: Omit<Fro
   return { status, ...extra };
 }
 
-async function waitForSignature(connection: Connection, signature: string): Promise<void> {
+async function waitForSignature(connection: Connection, signature: string, lastValidBlockHeight: number): Promise<void> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < TIMEOUT_MS) {
     const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
     if (status?.err) throw new Error(`Solana transaction failed: ${JSON.stringify(status.err)}`);
     if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
     const blockHeight = await connection.getBlockHeight("confirmed");
-    const latest = await connection.getLatestBlockhash("confirmed");
-    if (blockHeight > latest.lastValidBlockHeight) throw new Error("Solana transaction expired before confirmation");
+    if (blockHeight > lastValidBlockHeight) throw new Error("Solana transaction expired before confirmation");
     await sleep(POLL_MS);
   }
   throw new Error("Timed out waiting for Solana transaction confirmation");
@@ -41,9 +40,9 @@ export async function signAndConfirmFrontendTransaction(
     const latest = await connection.getLatestBlockhash("confirmed");
     transaction.recentBlockhash = latest.blockhash;
     transaction.lastValidBlockHeight = latest.lastValidBlockHeight;
-    transaction.feePayer = transaction.feePayer ?? new (await import("@solana/web3.js")).PublicKey(wallet.publicKey.toBase58());
+    transaction.feePayer = transaction.feePayer ?? new PublicKey(wallet.publicKey.toBase58());
 
-    const simulation = await connection.simulateTransaction(transaction);
+    const simulation = await connection.simulateTransaction(transaction, { sigVerify: false });
     if (simulation.value.err) {
       return chainState("failed", { error: JSON.stringify(simulation.value.err) });
     }
@@ -56,7 +55,7 @@ export async function signAndConfirmFrontendTransaction(
       preflightCommitment: "confirmed",
       maxRetries: 3,
     });
-    await waitForSignature(connection, signature);
+    await waitForSignature(connection, signature, latest.lastValidBlockHeight);
     const result = chainState("confirmed", { signature });
     onState(result);
     return result;
