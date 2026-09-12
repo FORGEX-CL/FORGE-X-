@@ -1,100 +1,68 @@
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
-import { chainState, FrontendChainState } from "./frontend-chain-status";
+import { Connection, Transaction } from "@solana/web3.js";
+import type { SolanaWalletProvider } from "./wallet-provider";
 
-export type WalletSigner = {
-  publicKey: PublicKey | null;
-  signTransaction: (transaction: Transaction) => Promise<Transaction>;
+export type FrontendChainState = {
+  status: "idle" | "preparing" | "awaiting_signature" | "confirming" | "confirmed" | "failed";
+  signature?: string;
+  error?: string;
 };
 
-const CONFIRM_POLL_MS = 500;
-const CONFIRM_TIMEOUT_MS = 90_000;
+const POLL_MS = 500;
+const TIMEOUT_MS = 90_000;
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+export function chainState(status: FrontendChainState["status"], extra: Omit<FrontendChainState, "status"> = {}): FrontendChainState {
+  return { status, ...extra };
 }
 
-async function waitForSignature(
-  connection: Connection,
-  signature: string,
-  lastValidBlockHeight: number,
-): Promise<void> {
+async function waitForSignature(connection: Connection, signature: string): Promise<void> {
   const startedAt = Date.now();
-
-  while (Date.now() - startedAt < CONFIRM_TIMEOUT_MS) {
-    const [statusResponse, currentBlockHeight] = await Promise.all([
-      connection.getSignatureStatuses([signature], { searchTransactionHistory: true }),
-      connection.getBlockHeight("confirmed"),
-    ]);
-
-    const status = statusResponse.value[0];
-
-    if (status?.err) {
-      throw new Error(JSON.stringify(status.err));
-    }
-
-    if (
-      status?.confirmationStatus === "confirmed" ||
-      status?.confirmationStatus === "finalized"
-    ) {
-      return;
-    }
-
-    if (currentBlockHeight > lastValidBlockHeight) {
-      throw new Error("Transaction expired before confirmation");
-    }
-
-    await sleep(CONFIRM_POLL_MS);
+  while (Date.now() - startedAt < TIMEOUT_MS) {
+    const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+    if (status?.err) throw new Error(`Solana transaction failed: ${JSON.stringify(status.err)}`);
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
+    const blockHeight = await connection.getBlockHeight("confirmed");
+    const latest = await connection.getLatestBlockhash("confirmed");
+    if (blockHeight > latest.lastValidBlockHeight) throw new Error("Solana transaction expired before confirmation");
+    await sleep(POLL_MS);
   }
-
-  throw new Error("Timed out waiting for transaction confirmation");
+  throw new Error("Timed out waiting for Solana transaction confirmation");
 }
 
-export async function sendWalletSignedTransaction(
+export async function signAndConfirmFrontendTransaction(
+  wallet: SolanaWalletProvider & { publicKey: { toBase58(): string }; signTransaction: (transaction: Transaction) => Promise<Transaction> },
   connection: Connection,
-  wallet: WalletSigner,
   transaction: Transaction,
+  onState: (state: FrontendChainState) => void = () => undefined,
 ): Promise<FrontendChainState> {
-  if (!wallet.publicKey) throw new Error("Connect a wallet first");
-
   try {
-    chainState("preparing");
-
-    // Refresh the blockhash immediately before the wallet prompt so the user
-    // does not sign a transaction built from a stale recent blockhash.
+    onState(chainState("preparing"));
     const latest = await connection.getLatestBlockhash("confirmed");
     transaction.recentBlockhash = latest.blockhash;
     transaction.lastValidBlockHeight = latest.lastValidBlockHeight;
-    transaction.feePayer = transaction.feePayer ?? wallet.publicKey;
+    transaction.feePayer = transaction.feePayer ?? new (await import("@solana/web3.js")).PublicKey(wallet.publicKey.toBase58());
 
-    // Preflight before signing. Signature verification is skipped here because
-    // the wallet has not signed yet; sendRawTransaction performs normal
-    // signature/preflight validation after signing.
-    const simulation = await connection.simulateTransaction(transaction, {
-      commitment: "confirmed",
-      sigVerify: false,
-      replaceRecentBlockhash: false,
-    });
-
+    const simulation = await connection.simulateTransaction(transaction);
     if (simulation.value.err) {
-      return chainState("failed", {
-        error: JSON.stringify(simulation.value.err),
-      });
+      return chainState("failed", { error: JSON.stringify(simulation.value.err) });
     }
 
-    chainState("awaiting_signature");
+    onState(chainState("awaiting_signature"));
     const signed = await wallet.signTransaction(transaction);
+    onState(chainState("confirming"));
     const signature = await connection.sendRawTransaction(signed.serialize(), {
       skipPreflight: false,
       preflightCommitment: "confirmed",
       maxRetries: 3,
     });
-
-    chainState("submitted", { signature });
-    await waitForSignature(connection, signature, latest.lastValidBlockHeight);
-
-    return chainState("confirmed", { signature });
+    await waitForSignature(connection, signature);
+    const result = chainState("confirmed", { signature });
+    onState(result);
+    return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return chainState("failed", { error: message });
+    const result = chainState("failed", { error: error instanceof Error ? error.message : "Transaction failed" });
+    onState(result);
+    return result;
   }
 }
