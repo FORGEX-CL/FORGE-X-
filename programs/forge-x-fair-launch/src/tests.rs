@@ -7,6 +7,11 @@ fn developer_minimum_buy_is_exactly_half_sol() {
 }
 
 #[test]
+fn initial_virtual_sol_reserve_matches_client_config() {
+    assert_eq!(INITIAL_VIRTUAL_SOL_RESERVE, 30_000_000_000);
+}
+
+#[test]
 fn trade_fee_is_fifty_basis_points() {
     let (fee_amount, net) = fee(1_000_000_000).expect("fee calculation");
     assert_eq!(fee_amount, 5_000_000);
@@ -24,7 +29,7 @@ fn fee_never_exceeds_gross_amount() {
 
 #[test]
 fn buy_quote_reduces_virtual_token_reserve() {
-    let vs = 1_000_000_000u64;
+    let vs = INITIAL_VIRTUAL_SOL_RESERVE;
     let vt = TOTAL_SUPPLY_BASE_UNITS;
     let out = buy_quote(500_000_000, vs, vt).expect("buy quote");
     assert!(out > 0);
@@ -33,7 +38,7 @@ fn buy_quote_reduces_virtual_token_reserve() {
 
 #[test]
 fn buy_quote_is_monotonic_for_larger_buys() {
-    let vs = 1_000_000_000u64;
+    let vs = INITIAL_VIRTUAL_SOL_RESERVE;
     let vt = TOTAL_SUPPLY_BASE_UNITS;
     let small = buy_quote(100_000_000, vs, vt).expect("small quote");
     let large = buy_quote(200_000_000, vs, vt).expect("large quote");
@@ -42,12 +47,12 @@ fn buy_quote_is_monotonic_for_larger_buys() {
 
 #[test]
 fn sell_quote_rejects_full_virtual_reserve() {
-    assert!(sell_quote(TOTAL_SUPPLY_BASE_UNITS, 1_000_000_000, TOTAL_SUPPLY_BASE_UNITS).is_err());
+    assert!(sell_quote(TOTAL_SUPPLY_BASE_UNITS, INITIAL_VIRTUAL_SOL_RESERVE, TOTAL_SUPPLY_BASE_UNITS).is_err());
 }
 
 #[test]
 fn sell_quote_is_positive_for_valid_trade() {
-    let out = sell_quote(1_000_000, 2_000_000_000, TOTAL_SUPPLY_BASE_UNITS).expect("sell quote");
+    let out = sell_quote(1_000_000, INITIAL_VIRTUAL_SOL_RESERVE, TOTAL_SUPPLY_BASE_UNITS).expect("sell quote");
     assert!(out > 0);
 }
 
@@ -58,7 +63,7 @@ fn state_round_trip_preserves_all_fields() {
         status: STATUS_LIVE,
         developer_bought_lamports: 500_000_000,
         real_sol_raised: 12_345_678,
-        virtual_sol_reserve: 1_012_345_678,
+        virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE + 12_345_678,
         virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS - 123_456,
         graduation_sol: 85_000_000_000,
         created_at: 1_750_000_000,
@@ -76,6 +81,12 @@ fn state_round_trip_preserves_all_fields() {
     assert_eq!(decoded.virtual_token_reserve, state.virtual_token_reserve);
     assert_eq!(decoded.graduation_sol, state.graduation_sol);
     assert_eq!(decoded.created_at, state.created_at);
+}
+
+#[test]
+fn migrated_status_is_terminal() {
+    assert_ne!(STATUS_MIGRATED, STATUS_LIVE);
+    assert_ne!(STATUS_MIGRATED, STATUS_GRADUATED);
 }
 
 #[test]
