@@ -1,2 +1,27 @@
 import { Shell, SectionTitle, Card } from "../components/Shell";
-export default function Trade(){return <Shell><main className="mx-auto max-w-7xl px-5 py-12 lg:px-8"><SectionTitle eyebrow="Trade" title="Trade with clarity." text="A clean execution workspace. Real quotes and wallet signing will be connected after the market data and Solana client layers are configured."/><div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]"><Card className="min-h-[430px]"><div className="flex items-center justify-between"><div><div className="text-sm text-white/40">Selected market</div><div className="mt-1 text-2xl font-bold">SOL / USDC</div></div><div className="text-right"><div className="text-2xl font-bold">$186.42</div><div className="text-sm text-emerald-400">+4.82%</div></div></div><div className="mt-10 flex h-64 items-end gap-2 rounded-xl border border-white/5 bg-black/20 p-5">{[35,48,42,57,50,72,61,80,69,88,76,94,84,100].map((h,i)=><div key={i} className="flex-1 rounded-t bg-[#f5c542]/50" style={{height:`${h}%`}} />)}</div></Card><Card><div className="flex rounded-xl bg-white/5 p-1"><button className="flex-1 rounded-lg bg-white/10 py-2 text-sm font-bold">Buy</button><button className="flex-1 py-2 text-sm text-white/40">Sell</button></div><label className="mt-6 block text-sm text-white/50">Amount<input className="forge-input" placeholder="0.00 SOL" /></label><div className="mt-4 space-y-3 text-sm text-white/40"><div className="flex justify-between"><span>Price impact</span><span>—</span></div><div className="flex justify-between"><span>Network fee</span><span>—</span></div></div><button className="mt-6 w-full rounded-xl bg-[#f5c542] py-3 font-bold text-black">Connect wallet to trade</button></Card></div></main></Shell>}
+import { FairLaunchTrader } from "../components/FairLaunchTrader";
+
+export default function Trade() {
+  return (
+    <Shell>
+      <main className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
+        <SectionTitle eyebrow="Trade" title="Trade the FORGE X curve." text="Fair Launch execution is wallet-signed and confirmed on-chain. The interface keeps the transaction boundary explicit: FORGE X prepares the instruction, your wallet approves it, Solana confirms it." />
+        <div className="grid gap-5 lg:grid-cols-[1.4fr_.8fr]">
+          <Card className="min-h-[430px]">
+            <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Execution model</p>
+            <h2 className="mt-3 text-2xl font-black">Bonding-curve trading</h2>
+            <div className="mt-7 grid gap-4 sm:grid-cols-2">
+              {["0.50% protocol trade fee", "Developer first buy: 0.5 SOL minimum", "Public trading opens after first buy", "Trading stops when graduation is reached", "Graduation target: 85 SOL", "Post-graduation liquidity: Raydium CPMM"].map((item) => (
+                <div key={item} className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">{item}</div>
+              ))}
+            </div>
+            <div className="mt-7 rounded-xl border border-[#f5c542]/15 bg-[#f5c542]/5 p-5 text-sm leading-6 text-white/55">
+              FORGE X does not report a trade as successful merely because a transaction was submitted. The UI waits for the actual Solana signature status and blockhash validity window.
+            </div>
+          </Card>
+          <FairLaunchTrader />
+        </div>
+      </main>
+    </Shell>
+  );
+}
