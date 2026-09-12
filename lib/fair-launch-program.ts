@@ -159,6 +159,7 @@ export function buildFairLaunchSell(
       { pubkey: sellerAta, isSigner: false, isWritable: true },
       { pubkey: vault, isSigner: false, isWritable: true },
       { pubkey: feeReceiver, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     data: Buffer.concat([Buffer.from([2]), u64(tokenBaseUnits)]),
@@ -178,5 +179,35 @@ export function buildGraduateFairLaunch(
       { pubkey: mint, isSigner: false, isWritable: false },
     ],
     data: Buffer.from([3]),
+  });
+}
+
+/**
+ * Atomically moves graduated liquidity from the Fair Launch PDA into the
+ * developer wallet immediately before the Raydium CPMM create-pool instruction.
+ * The transaction must be signed by the original developer. If Raydium pool
+ * creation fails later in the same transaction, Solana rolls this transfer back.
+ */
+export function buildMigrateFairLaunchToDeveloper(
+  mint: PublicKey,
+  developer: PublicKey,
+  programId = FORGE_X_FAIR_LAUNCH_PROGRAM_ID,
+): TransactionInstruction {
+  if (!programId) throw new Error("FORGE X Fair Launch program ID is not configured");
+  const state = fairLaunchStatePda(mint, programId);
+  const vault = fairLaunchVaultAta(mint, programId);
+  const destinationToken = getAssociatedTokenAddressSync(mint, developer);
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: state, isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: developer, isSigner: true, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: destinationToken, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([4]),
   });
 }
