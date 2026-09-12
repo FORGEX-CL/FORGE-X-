@@ -15,12 +15,8 @@ export async function POST(request: NextRequest) {
     const metadataUri = String(body.metadataUri || "").trim();
 
     assertFairLaunchSupply(supply);
-    if (Number(body.decimals) !== FORGE_X_FAIR_LAUNCH.decimals) {
-      throw new Error("FORGE X Fair Launch uses exactly 9 decimals");
-    }
-    if (body.revokeMintAuthority !== true || body.revokeFreezeAuthority !== true) {
-      throw new Error("FORGE X Fair Launch automatically revokes mint and freeze authority");
-    }
+    if (Number(body.decimals) !== FORGE_X_FAIR_LAUNCH.decimals) throw new Error("FORGE X Fair Launch uses exactly 9 decimals");
+    if (body.revokeMintAuthority !== true || body.revokeFreezeAuthority !== true) throw new Error("FORGE X Fair Launch automatically revokes mint and freeze authority");
     if (!metadataUri) throw new Error("Metadata URI is required for Fair Launch");
 
     const connection = new Connection(RPC, "confirmed");
@@ -42,7 +38,7 @@ export async function POST(request: NextRequest) {
         developerFirstBuyRequired: FORGE_X_FAIR_LAUNCH.developerFirstBuyRequired,
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
-        metadataAuthorityRevoked: FORGE_X_FAIR_LAUNCH.metadataAuthorityRevoked,
+        metadataAuthorityRevoked: result.metadataUpdateAuthorityRevoked,
         metadataImmutable: result.metadataImmutable,
         tradingFeeBps: FORGE_X_FAIR_LAUNCH.tradingFeeBps,
       },
