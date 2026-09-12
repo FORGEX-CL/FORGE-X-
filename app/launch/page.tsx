@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Shell, SectionTitle, Card } from "../components/Shell";
 import { WalletButton } from "../components/WalletButton";
 
@@ -23,7 +24,7 @@ export default function Launch() {
       <main className="mx-auto max-w-6xl px-5 py-12 lg:px-8">
         <div className="mb-10 flex items-center justify-between gap-5">
           <div className="flex items-center gap-5">
-            <img src="/forge-x-mark.svg" alt="FORGE X" className="h-20 w-20 rounded-2xl" />
+            <Image src="/forge-x-mark.svg" alt="FORGE X" width={80} height={80} className="rounded-2xl" priority />
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f5c542]">FORGE X</p>
               <h1 className="mt-1 text-3xl font-black tracking-tight">Fair Launch</h1>
@@ -68,26 +69,26 @@ export default function Launch() {
               <p className="text-sm font-bold">What FORGE X locks automatically</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {[["Fixed supply", "1B tokens"], ["Mint authority", "Revoked"], ["Freeze authority", "Revoked"], ["Metadata", "Finalized after launch"]].map(([a, b]) => (
-                  <div key={a} className="flex items-center justify-between rounded-xl bg-white/[0.03] px-4 py-3 text-sm">
-                    <span className="text-white/50">{a}</span><span className="font-semibold">{b}</span>
+                  <div key={a} className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[.02] px-4 py-3 text-sm">
+                    <span className="text-white/55">{a}</span><span className="font-semibold">{b}</span>
                   </div>
                 ))}
               </div>
             </div>
-
-            <button className="mt-6 rounded-full bg-[#f5c542] px-6 py-3 font-bold text-black">Review Fair Launch</button>
           </Card>
 
           <Card>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#f5c542]">Protocol rules</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#f5c542]">Launch rules</p>
             <div className="mt-5 space-y-3">
-              {rules.map(([a, b]) => (
-                <div key={a} className="flex items-center justify-between border-b border-white/10 pb-3 text-sm">
-                  <span className="text-white/45">{a}</span><span className="font-bold">{b}</span>
+              {rules.map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-4 border-b border-white/5 pb-3 text-sm">
+                  <span className="text-white/50">{label}</span><span className="font-semibold text-right">{value}</span>
                 </div>
               ))}
             </div>
-            <p className="mt-5 text-xs leading-5 text-white/35">These values are the current Devnet protocol configuration. Mainnet economics remain subject to final security and economic testing.</p>
+            <div className="mt-6 rounded-xl border border-[#f5c542]/20 bg-[#f5c542]/5 p-4 text-sm leading-6 text-white/65">
+              Your wallet remains the signer. FORGE X never takes custody of the launch funds or private keys.
+            </div>
           </Card>
         </div>
       </main>
