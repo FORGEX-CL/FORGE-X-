@@ -9,9 +9,10 @@ const TIMEOUT_MS = 90_000;
 const FAIR_SUPPLY = "1000000000";
 const TEST_METADATA_URI = "https://raw.githubusercontent.com/solana-developers/program-examples/new-examples/tokens/tokens/.assets/spl-token.json";
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+type SolanaWallet = { publicKey?: { toString(): string }; signTransaction?: (transaction: Transaction) => Promise<Transaction> };
+declare global { interface Window { solana?: SolanaWallet } }
+
+function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 async function waitForSignature(connection: Connection, signature: string) {
   const startedAt = Date.now();
@@ -31,42 +32,23 @@ export function TokenLaunchSigner() {
   const [error, setError] = useState("");
 
   async function launch() {
-    const wallet = (window as any).solana;
+    const wallet = window.solana;
     if (!wallet?.publicKey || !wallet.signTransaction) { setError("Connect a Solana wallet first."); return; }
     setError(""); setStatus("preparing");
     try {
-      const response = await fetch("/api/launch/prepare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payer: wallet.publicKey.toString(),
-          name: "FORGE TEST",
-          symbol: "FGX",
-          decimals: 9,
-          supply: FAIR_SUPPLY,
-          metadataUri: TEST_METADATA_URI,
-          revokeMintAuthority: true,
-          revokeFreezeAuthority: true,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to prepare launch");
+      const response = await fetch("/api/launch/prepare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payer: wallet.publicKey.toString(), name: "FORGE TEST", symbol: "FGX", decimals: 9, supply: FAIR_SUPPLY, metadataUri: TEST_METADATA_URI, revokeMintAuthority: true, revokeFreezeAuthority: true }) });
+      const data = await response.json() as { mint?: string; transaction?: string; error?: string };
+      if (!response.ok || !data.mint || !data.transaction) throw new Error(data.error || "Unable to prepare launch");
       setMint(data.mint); setStatus("signing");
       const tx = Transaction.from(Buffer.from(data.transaction, "base64"));
-
       const connection = new Connection(RPC, "confirmed");
       const latest = await connection.getLatestBlockhash("confirmed");
       tx.recentBlockhash = latest.blockhash;
       tx.lastValidBlockHeight = latest.lastValidBlockHeight;
       tx.feePayer = tx.feePayer ?? wallet.publicKey;
-
       const signed = await wallet.signTransaction(tx);
       setStatus("confirming");
-      const txid = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: "confirmed",
-        maxRetries: 3,
-      });
+      const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
       setSignature(txid);
       await waitForSignature(connection, txid);
       setStatus("confirmed");
@@ -76,22 +58,5 @@ export function TokenLaunchSigner() {
     }
   }
 
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[.025] p-6">
-      <div className="mb-4">
-        <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Devnet launch</p>
-        <h3 className="mt-2 text-xl font-black">Test wallet-signed Fair Launch</h3>
-      </div>
-      <button
-        onClick={launch}
-        disabled={status === "preparing" || status === "signing" || status === "confirming"}
-        className="w-full rounded-xl bg-[#f5c542] px-5 py-3 font-bold text-black disabled:opacity-40"
-      >
-        {status === "preparing" ? "Preparing…" : status === "signing" ? "Approve in wallet…" : status === "confirming" ? "Confirming…" : status === "confirmed" ? "Mint confirmed ✓" : "Create Devnet test token"}
-      </button>
-      {mint && <p className="mt-3 break-all text-xs text-white/45">Mint: {mint}</p>}
-      {signature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${signature}?cluster=devnet`} target="_blank" rel="noreferrer">View Devnet transaction</a>}
-      {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
-    </div>
-  );
+  return <div className="rounded-2xl border border-white/10 bg-white/[.025] p-6"><div className="mb-4"><p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Devnet launch</p><h3 className="mt-2 text-xl font-black">Test wallet-signed Fair Launch</h3></div><button onClick={launch} disabled={status === "preparing" || status === "signing" || status === "confirming"} className="w-full rounded-xl bg-[#f5c542] px-5 py-3 font-bold text-black disabled:opacity-40">{status === "preparing" ? "Preparing…" : status === "signing" ? "Approve in wallet…" : status === "confirming" ? "Confirming…" : status === "confirmed" ? "Mint confirmed ✓" : "Create Devnet test token"}</button>{mint && <p className="mt-3 break-all text-xs text-white/45">Mint: {mint}</p>}{signature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${signature}?cluster=devnet`} target="_blank" rel="noreferrer">View Devnet transaction</a>}{error && <p className="mt-3 text-xs text-red-400">{error}</p>}</div>;
 }
