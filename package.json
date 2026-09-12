@@ -17,6 +17,7 @@
     "@metaplex-foundation/umi": "^1.5.1",
     "@metaplex-foundation/umi-bundle-defaults": "^1.5.1",
     "@metaplex-foundation/umi-web3js-adapters": "^1.5.1",
+    "bn.js": "^5.2.1",
     "pinata": "^2.5.0",
     "next": "latest",
     "react": "latest",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "latest",
+    "@types/bn.js": "^5.1.5",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
