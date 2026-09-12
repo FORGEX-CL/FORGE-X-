@@ -13,6 +13,7 @@ import { createV1, updateV1, mplTokenMetadata, TokenStandard } from "@metaplex-f
 import { createNoopSigner, publicKey, signerIdentity, signerPayer, percentAmount } from "@metaplex-foundation/umi";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { fromWeb3JsPublicKey, toWeb3JsInstruction } from "@metaplex-foundation/umi-web3js-adapters";
+import { buildInitializeFairLaunch, buildSeedFairLaunchVault, fairLaunchStatePda, fairLaunchVaultAta } from "./fair-launch-program";
 
 export type TokenLaunchConfig = {
   name: string;
@@ -22,6 +23,7 @@ export type TokenLaunchConfig = {
   metadataUri: string;
   revokeMintAuthority: boolean;
   revokeFreezeAuthority: boolean;
+  fairLaunchGraduationSolLamports?: bigint;
 };
 
 export async function buildTokenLaunchTransaction(
@@ -38,6 +40,9 @@ export async function buildTokenLaunchTransaction(
   if (config.supply <= 0n) throw new Error("Supply must be greater than zero");
   if (!config.revokeMintAuthority || !config.revokeFreezeAuthority) {
     throw new Error("FORGE X launch requires mint and freeze authority revocation");
+  }
+  if (config.fairLaunchGraduationSolLamports !== undefined && config.fairLaunchGraduationSolLamports <= 0n) {
+    throw new Error("Fair Launch graduation target must be positive");
   }
 
   const mint = Keypair.generate();
@@ -89,8 +94,6 @@ export async function buildTokenLaunchTransaction(
     uri: config.metadataUri.trim(),
     sellerFeeBasisPoints: percentAmount(0),
     tokenStandard: TokenStandard.Fungible,
-    // The metadata must be mutable during this transaction so updateV1 can atomically
-    // remove the update authority and make the account permanently immutable.
     isMutable: true,
     creators: null,
     collectionDetails: null,
@@ -107,6 +110,24 @@ export async function buildTokenLaunchTransaction(
   }).getInstructions().map(toWeb3JsInstruction);
 
   tx.add(...metadataCreate, ...metadataFinalize);
+
+  // For Fair Launch, initialize the curve and move the complete fixed supply into
+  // the program-controlled vault in the same signed transaction. This removes the
+  // unsafe intermediate state where a launched mint exists without its curve.
+  let fairLaunchState: string | null = null;
+  let fairLaunchVault: string | null = null;
+  if (config.fairLaunchGraduationSolLamports !== undefined) {
+    tx.add(
+      buildInitializeFairLaunch(mint.publicKey, payer, config.fairLaunchGraduationSolLamports),
+      ...buildSeedFairLaunchVault(mint.publicKey, payer),
+    );
+    const programId = process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID;
+    if (!programId) throw new Error("FORGE X Fair Launch program ID is not configured");
+    const fairLaunchProgramId = new PublicKey(programId);
+    fairLaunchState = fairLaunchStatePda(mint.publicKey, fairLaunchProgramId).toBase58();
+    fairLaunchVault = fairLaunchVaultAta(mint.publicKey, fairLaunchProgramId).toBase58();
+  }
+
   tx.feePayer = payer;
   const latest = await connection.getLatestBlockhash("confirmed");
   tx.recentBlockhash = latest.blockhash;
@@ -118,6 +139,8 @@ export async function buildTokenLaunchTransaction(
     mint: mint.publicKey.toBase58(),
     mintKeypair: mint,
     associatedTokenAccount: ata[0].toBase58(),
+    fairLaunchState,
+    fairLaunchVault,
     lastValidBlockHeight: latest.lastValidBlockHeight,
     metadataImmutable: true,
     metadataUpdateAuthorityRevoked: true,
