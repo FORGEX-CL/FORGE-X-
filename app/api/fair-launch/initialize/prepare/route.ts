@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
-import { getAccount, getMint } from "@solana/spl-token";
+import { getAccount, getAssociatedTokenAddress, getMint } from "@solana/spl-token";
 import { buildInitializeFairLaunch, buildSeedFairLaunchVault } from "@/lib/fair-launch-program";
 import { FORGE_X_FAIR_LAUNCH } from "@/lib/fair-launch-rules";
 
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     if (mintInfo.supply !== FORGE_X_FAIR_LAUNCH.supply * 10n ** 9n) throw new Error("Mint supply does not match Fair Launch rules");
     if (mintInfo.mintAuthority !== null || mintInfo.freezeAuthority !== null) throw new Error("Mint authorities must already be revoked");
 
-    const developerAta = await getAccount(connection, await import("@solana/spl-token").then(({ getAssociatedTokenAddress }) => getAssociatedTokenAddress(mint, developer)), "confirmed");
+    const developerAta = await getAccount(connection, await getAssociatedTokenAddress(mint, developer), "confirmed");
     if (developerAta.amount !== mintInfo.supply) throw new Error("Developer token account does not contain the complete Fair Launch supply");
 
     const latest = await connection.getLatestBlockhash("confirmed");
