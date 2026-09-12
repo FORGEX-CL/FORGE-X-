@@ -2,13 +2,14 @@ export const FORGE_X_FAIR_LAUNCH = Object.freeze({
   supply: 1_000_000_000n,
   decimals: 9,
   developerFirstBuyRequired: true,
+  developerMinimumBuyLamports: 500_000_000n,
   mintAuthorityRevoked: true,
   freezeAuthorityRevoked: true,
   metadataAuthorityRevoked: true,
   tradingFeeBps: 50,
   graduation: {
-    // Protocol-level threshold placeholder; must be configured before Mainnet.
     enabled: true,
+    targetSolLamports: 85_000_000_000n,
   },
 });
 
