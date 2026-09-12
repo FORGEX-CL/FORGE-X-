@@ -3,7 +3,8 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { buildTokenLaunchTransaction } from "@/lib/token-launch";
 import { FORGE_X_FAIR_LAUNCH, assertFairLaunchSupply } from "@/lib/fair-launch-rules";
 
-const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
+const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet";
+const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "mainnet-beta" ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com");
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,6 +19,7 @@ export async function POST(request: NextRequest) {
     if (Number(body.decimals) !== FORGE_X_FAIR_LAUNCH.decimals) throw new Error("FORGE X Fair Launch uses exactly 9 decimals");
     if (body.revokeMintAuthority !== true || body.revokeFreezeAuthority !== true) throw new Error("FORGE X Fair Launch automatically revokes mint and freeze authority");
     if (!metadataUri) throw new Error("Metadata URI is required for Fair Launch");
+    if (!process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID) throw new Error("FORGE X Fair Launch program ID is not configured");
 
     const connection = new Connection(RPC, "confirmed");
     const result = await buildTokenLaunchTransaction(connection, payer, {
@@ -28,22 +30,27 @@ export async function POST(request: NextRequest) {
       metadataUri,
       revokeMintAuthority: true,
       revokeFreezeAuthority: true,
+      fairLaunchGraduationSolLamports: FORGE_X_FAIR_LAUNCH.graduation.targetSolLamports,
     });
 
     return NextResponse.json({
-      network: RPC.includes("devnet") ? "devnet" : "configured",
+      network: CLUSTER,
       rules: {
         supply: FORGE_X_FAIR_LAUNCH.supply.toString(),
         decimals: FORGE_X_FAIR_LAUNCH.decimals,
         developerFirstBuyRequired: FORGE_X_FAIR_LAUNCH.developerFirstBuyRequired,
+        developerMinimumBuyLamports: FORGE_X_FAIR_LAUNCH.developerMinimumBuyLamports.toString(),
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
         metadataAuthorityRevoked: result.metadataUpdateAuthorityRevoked,
         metadataImmutable: result.metadataImmutable,
         tradingFeeBps: FORGE_X_FAIR_LAUNCH.tradingFeeBps,
+        graduationTargetLamports: FORGE_X_FAIR_LAUNCH.graduation.targetSolLamports.toString(),
       },
       mint: result.mint,
       associatedTokenAccount: result.associatedTokenAccount,
+      fairLaunchState: result.fairLaunchState,
+      fairLaunchVault: result.fairLaunchVault,
       transaction: result.transaction.serialize({ requireAllSignatures: false }).toString("base64"),
       lastValidBlockHeight: result.lastValidBlockHeight,
     });
