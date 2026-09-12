@@ -9,8 +9,14 @@ const TIMEOUT_MS = 90_000;
 const FAIR_SUPPLY = "1000000000";
 const TEST_METADATA_URI = "https://raw.githubusercontent.com/solana-developers/program-examples/new-examples/tokens/tokens/.assets/spl-token.json";
 
-type SolanaWallet = { publicKey?: { toString(): string }; signTransaction?: (transaction: Transaction) => Promise<Transaction> };
-declare global { interface Window { solana?: SolanaWallet } }
+type BrowserSolanaWallet = {
+  publicKey?: { toString(): string } | null;
+  signTransaction?: (transaction: Transaction) => Promise<Transaction>;
+};
+
+function getWallet(): BrowserSolanaWallet | undefined {
+  return (window as Window & { solana?: BrowserSolanaWallet }).solana;
+}
 
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
@@ -32,7 +38,7 @@ export function TokenLaunchSigner() {
   const [error, setError] = useState("");
 
   async function launch() {
-    const wallet = window.solana;
+    const wallet = getWallet();
     if (!wallet?.publicKey || !wallet.signTransaction) { setError("Connect a Solana wallet first."); return; }
     setError(""); setStatus("preparing");
     try {
@@ -45,7 +51,7 @@ export function TokenLaunchSigner() {
       const latest = await connection.getLatestBlockhash("confirmed");
       tx.recentBlockhash = latest.blockhash;
       tx.lastValidBlockHeight = latest.lastValidBlockHeight;
-      tx.feePayer = tx.feePayer ?? wallet.publicKey;
+      tx.feePayer = tx.feePayer ?? new (await import("@solana/web3.js")).PublicKey(wallet.publicKey.toString());
       const signed = await wallet.signTransaction(tx);
       setStatus("confirming");
       const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
