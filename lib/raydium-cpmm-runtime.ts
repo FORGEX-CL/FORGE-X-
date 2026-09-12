@@ -36,8 +36,6 @@ export async function createDevnetCpmmPool(input: CreateDevnetCpmmPoolInput) {
   const feeConfigs = await raydium.api.getCpmmConfigs();
   if (!feeConfigs.length) throw new Error("No Raydium Devnet CPMM fee configuration available");
 
-  // Raydium's Devnet configs need their PDA-derived IDs rather than blindly
-  // reusing the published config ID.
   const feeConfig = {
     ...feeConfigs[0],
     id: getCpmmPdaAmmConfigId(DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM, feeConfigs[0].index).publicKey.toBase58(),
@@ -58,5 +56,6 @@ export async function createDevnetCpmmPool(input: CreateDevnetCpmmPoolInput) {
   });
 
   const result = await execute({ sendAndConfirm: true });
-  return { txId: result.txId, poolId: extInfo.address?.poolId?.toBase58?.() ?? extInfo.poolId?.toBase58?.() ?? null };
+  const poolId = (extInfo.address as { poolId?: PublicKey }).poolId;
+  return { txId: result.txId, poolId: poolId?.toBase58() ?? null };
 }
