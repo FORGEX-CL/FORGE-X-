@@ -8,7 +8,7 @@ name = "forge_x_fair_launch"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-solana-program = "=4.1.2"
+solana-program = "=4.1.0"
 spl-token = "=9.0.0"
 
 [dev-dependencies]
