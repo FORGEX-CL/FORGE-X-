@@ -30,7 +30,6 @@ export async function POST(request: NextRequest) {
       metadataUri,
       revokeMintAuthority: true,
       revokeFreezeAuthority: true,
-      fairLaunchGraduationSolLamports: FORGE_X_FAIR_LAUNCH.graduation.targetSolLamports,
     });
 
     return NextResponse.json({
@@ -49,15 +48,10 @@ export async function POST(request: NextRequest) {
       },
       mint: result.mint,
       associatedTokenAccount: result.associatedTokenAccount,
-      fairLaunchState: result.fairLaunchState,
-      fairLaunchVault: result.fairLaunchVault,
       transaction: result.transaction.serialize({ requireAllSignatures: false }).toString("base64"),
       lastValidBlockHeight: result.lastValidBlockHeight,
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to prepare token launch" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare token launch" }, { status: 400 });
   }
 }
