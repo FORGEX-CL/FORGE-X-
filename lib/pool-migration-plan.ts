@@ -7,7 +7,7 @@ export type PoolMigrationPlan = {
   solLamports: bigint;
   tokenBaseUnits: bigint;
   requiresWalletSignature: true;
-  confirmedOnChain: false;
+  confirmedOnChain: boolean;
 };
 
 export function preparePoolMigration(reserve: GraduationReserve): PoolMigrationPlan {
