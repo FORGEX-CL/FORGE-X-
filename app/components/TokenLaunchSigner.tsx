@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Connection, Transaction } from "@solana/web3.js";
 
 const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
+const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "devnet";
 const POLL_MS = 500;
 const TIMEOUT_MS = 90_000;
 const FAIR_SUPPLY = "1000000000";
@@ -15,6 +16,10 @@ type BrowserSolanaWallet = {
   signTransaction?: (transaction: Transaction) => Promise<Transaction>;
 };
 function getWallet(): BrowserSolanaWallet | undefined { return (window as Window & { solana?: BrowserSolanaWallet }).solana; }
+function explorerTx(signature: string) {
+  const suffix = CLUSTER === "mainnet-beta" ? "" : `?cluster=${encodeURIComponent(CLUSTER)}`;
+  return `https://solscan.io/tx/${signature}${suffix}`;
+}
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 async function waitForSignature(connection: Connection, signature: string, lastValidBlockHeight: number, label: string) {
   const startedAt = Date.now();
@@ -109,7 +114,7 @@ export function TokenLaunchSigner() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[.025] p-6">
       <div className="mb-5">
-        <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Devnet Fair Launch</p>
+        <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">{CLUSTER === "mainnet-beta" ? "Mainnet" : CLUSTER} Fair Launch</p>
         <h3 className="mt-2 text-xl font-black">Create → initialize → developer buy</h3>
         <p className="mt-2 text-sm leading-6 text-white/45">FORGE X stores real metadata on public IPFS, creates the fixed 1B token, locks authorities, initializes the curve, seeds its vault, then requires and verifies the developer's 0.5 SOL first buy.</p>
       </div>
@@ -127,9 +132,9 @@ export function TokenLaunchSigner() {
       </button>
       {mint && <p className="mt-3 break-all text-xs text-white/45">Mint: {mint}</p>}
       {metadataUri && <a className="mt-2 block break-all text-xs text-white/35" href={metadataUri} target="_blank" rel="noreferrer">Metadata: {metadataUri}</a>}
-      {signature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${signature}?cluster=devnet`} target="_blank" rel="noreferrer">View launch transaction</a>}
-      {initializeSignature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${initializeSignature}?cluster=devnet`} target="_blank" rel="noreferrer">View Fair Launch initialization</a>}
-      {developerBuySignature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${developerBuySignature}?cluster=devnet`} target="_blank" rel="noreferrer">View developer buy transaction</a>}
+      {signature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={explorerTx(signature)} target="_blank" rel="noreferrer">View launch transaction</a>}
+      {initializeSignature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={explorerTx(initializeSignature)} target="_blank" rel="noreferrer">View Fair Launch initialization</a>}
+      {developerBuySignature && <a className="mt-2 block break-all text-xs text-[#f5c542]" href={explorerTx(developerBuySignature)} target="_blank" rel="noreferrer">View developer buy transaction</a>}
       {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
     </div>
   );
