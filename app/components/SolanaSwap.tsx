@@ -7,12 +7,14 @@ const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.
 const POLL_MS = 500;
 const TIMEOUT_MS = 90_000;
 
-type SolanaProvider = {
-  publicKey?: { toString(): string };
+type BrowserSolanaProvider = {
+  publicKey?: { toString(): string } | null;
   signTransaction?: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
 };
 
-declare global { interface Window { solana?: SolanaProvider } }
+function getProvider(): BrowserSolanaProvider | undefined {
+  return (window as Window & { solana?: BrowserSolanaProvider }).solana;
+}
 
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
@@ -32,7 +34,7 @@ export function SolanaSwap({ quote }: { quote: unknown }) {
   const [signature, setSignature] = useState("");
 
   async function signAndSend() {
-    const provider = window.solana;
+    const provider = getProvider();
     if (!provider?.publicKey || !provider.signTransaction) return setStatus("failed");
     try {
       setStatus("signing");
