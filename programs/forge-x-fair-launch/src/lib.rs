@@ -8,10 +8,9 @@ use solana_program::{
     program_pack::Pack,
     pubkey::Pubkey,
     rent::Rent,
-    system_instruction,
-    system_program,
     sysvar::Sysvar,
 };
+use solana_system_interface::{instruction as system_instruction, program as system_program};
 use spl_token::{instruction as token_instruction, state::{Account as TokenAccount, Mint}};
 
 entrypoint!(process_instruction);
@@ -75,7 +74,7 @@ impl State {
     }
 }
 
-pub fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], instruction_data: &[u8]) -> ProgramResult {
+pub fn process_instruction<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'a>], instruction_data: &[u8]) -> ProgramResult {
     if instruction_data.is_empty() { return Err(ProgramError::InvalidInstructionData); }
     let mut it = accounts.iter();
     match instruction_data[0] {
@@ -96,6 +95,7 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     let developer = next_account_info(it)?;
     let system = next_account_info(it)?;
     if !state_account.is_writable || !developer.is_signer || !developer.is_writable || !system_program::check_id(system.key) { return Err(ProgramError::InvalidArgument); }
+    if mint_account.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
     let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint_account.key.as_ref()], program_id);
     if state_account.key != &expected_state { return Err(ProgramError::InvalidSeeds); }
     let mint = Mint::unpack(&mint_account.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
@@ -138,7 +138,7 @@ fn sell_quote(token_in: u64, vs: u64, vt: u64) -> Result<u64, ProgramError> {
     u64::try_from(numerator / denominator).map_err(|_| ProgramError::ArithmeticOverflow)
 }
 fn validate_token_accounts(mint: &AccountInfo, vault: &AccountInfo, user: &AccountInfo, user_token: &AccountInfo, program_id: &Pubkey) -> Result<(TokenAccount, TokenAccount), ProgramError> {
-    if vault.owner != &spl_token::id() || user_token.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
+    if mint.owner != &spl_token::id() || vault.owner != &spl_token::id() || user_token.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
     let v = TokenAccount::unpack(&vault.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
     let u = TokenAccount::unpack(&user_token.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
     let (expected_state, _) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
@@ -212,6 +212,7 @@ fn migrate_to_developer<'a, I>(program_id: &Pubkey, it: &mut I) -> ProgramResult
 where I: Iterator<Item = &'a AccountInfo<'a>> {
     let state_account = next_account_info(it)?; let mint = next_account_info(it)?; let developer = next_account_info(it)?; let token_vault = next_account_info(it)?; let destination_token = next_account_info(it)?; let system = next_account_info(it)?; let token_program = next_account_info(it)?;
     if !state_account.is_writable || !developer.is_signer || !developer.is_writable || !token_vault.is_writable || !destination_token.is_writable || !system_program::check_id(system.key) || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
+    if mint.owner != &spl_token::id() || token_vault.owner != &spl_token::id() || destination_token.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
     let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
     if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
