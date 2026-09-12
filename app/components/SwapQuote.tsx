@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 
+type Quote = { outAmount: string; priceImpactPct?: string | number | null; [key: string]: unknown };
+
 export function SwapQuote() {
   const [inputMint, setInputMint] = useState("So11111111111111111111111111111111111111112");
   const [outputMint, setOutputMint] = useState("");
   const [amount, setAmount] = useState("");
-  const [quote, setQuote] = useState<any>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -14,7 +16,7 @@ export function SwapQuote() {
     setLoading(true); setError(""); setQuote(null);
     try {
       const res = await fetch(`/api/quote?inputMint=${encodeURIComponent(inputMint)}&outputMint=${encodeURIComponent(outputMint)}&amount=${encodeURIComponent(amount)}`);
-      const data = await res.json();
+      const data = await res.json() as Quote & { error?: string };
       if (!res.ok) throw new Error(data.error || "Quote unavailable");
       setQuote(data);
     } catch (e) { setError(e instanceof Error ? e.message : "Quote unavailable"); }
