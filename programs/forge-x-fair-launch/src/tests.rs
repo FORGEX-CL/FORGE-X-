@@ -52,7 +52,9 @@ fn sell_quote_rejects_full_virtual_reserve() {
 
 #[test]
 fn sell_quote_is_positive_for_valid_trade() {
-    let out = sell_quote(1_000_000, INITIAL_VIRTUAL_SOL_RESERVE, TOTAL_SUPPLY_BASE_UNITS).expect("sell quote");
+    // A 1,000,000 base-unit sale rounds to zero lamports at the initial
+    // reserves. Use a larger valid trade to verify a positive quote.
+    let out = sell_quote(1_000_000_000_000, INITIAL_VIRTUAL_SOL_RESERVE, TOTAL_SUPPLY_BASE_UNITS).expect("sell quote");
     assert!(out > 0);
 }
 
