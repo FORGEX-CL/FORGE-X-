@@ -3,6 +3,13 @@
 import { FormEvent, useState } from "react";
 import { Shell, SectionTitle, Card } from "../components/Shell";
 
+type Risk = {
+  level?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  score?: number;
+  hold?: boolean;
+  impersonation?: boolean;
+};
+
 type Pair = {
   pairAddress?: string;
   baseToken?: { name?: string; symbol?: string };
@@ -12,9 +19,17 @@ type Pair = {
   volume?: { h24?: number };
   liquidity?: { usd?: number };
   dexId?: string;
+  forgeRisk?: Risk;
 };
 
 const money = (value?: number) => value == null ? "—" : value >= 1_000_000 ? `$${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `$${(value / 1_000).toFixed(1)}K` : `$${value.toFixed(0)}`;
+
+function riskLabel(risk?: Risk) {
+  if (!risk) return "Unscreened";
+  if (risk.hold || risk.level === "CRITICAL") return "Hold";
+  if (risk.impersonation) return "Impersonation risk";
+  return `${risk.level ?? "UNKNOWN"} risk`;
+}
 
 export default function Market() {
   const [query, setQuery] = useState("SOL");
@@ -54,8 +69,15 @@ export default function Market() {
         <div className="hidden grid-cols-6 gap-4 border-b border-white/10 px-2 pb-4 text-xs uppercase tracking-wider text-white/35 md:grid"><span>Pair</span><span>Price</span><span>24h</span><span>Volume</span><span>Liquidity</span><span>DEX</span></div>
         {pairs.length === 0 && !loading ? <div className="py-16 text-center text-sm text-white/40">Search for a token to load live Solana markets.</div> : pairs.map((pair) => {
           const change = pair.priceChange?.h24 ?? 0;
+          const risk = pair.forgeRisk;
           return <div key={`${pair.pairAddress}-${pair.dexId}`} className="grid gap-2 border-b border-white/5 px-2 py-5 text-sm last:border-0 md:grid-cols-6 md:gap-4 md:items-center">
-            <div><div className="font-semibold">{pair.baseToken?.symbol ?? "Unknown"}/{pair.quoteToken?.symbol ?? "—"}</div><div className="text-xs text-white/35">{pair.baseToken?.name ?? ""}</div></div>
+            <div>
+              <div className="font-semibold">{pair.baseToken?.symbol ?? "Unknown"}/{pair.quoteToken?.symbol ?? "—"}</div>
+              <div className="text-xs text-white/35">{pair.baseToken?.name ?? ""}</div>
+              <div className={`mt-1 text-[10px] font-bold uppercase tracking-wider ${risk?.hold || risk?.level === "CRITICAL" ? "text-red-300" : risk?.impersonation || risk?.level === "HIGH" ? "text-amber-300" : "text-emerald-300"}`}>
+                {riskLabel(risk)}{risk?.score != null ? ` · ${risk.score}/100` : ""}
+              </div>
+            </div>
             <span>{pair.priceUsd ? `$${Number(pair.priceUsd).toPrecision(6)}` : "—"}</span>
             <span className={change >= 0 ? "text-emerald-400" : "text-red-400"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span>
             <span className="text-white/50">{money(pair.volume?.h24)}</span>
