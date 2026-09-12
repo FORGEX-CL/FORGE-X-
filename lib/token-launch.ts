@@ -9,7 +9,7 @@ import {
   AuthorityType,
   getMinimumBalanceForRentExemptMint,
 } from "@solana/spl-token";
-import { createV1, mplTokenMetadata, TokenStandard } from "@metaplex-foundation/mpl-token-metadata";
+import { createV1, updateV1, mplTokenMetadata, TokenStandard } from "@metaplex-foundation/mpl-token-metadata";
 import { createNoopSigner, publicKey, signerIdentity, signerPayer, percentAmount } from "@metaplex-foundation/umi";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { fromWeb3JsPublicKey, toWeb3JsInstruction } from "@metaplex-foundation/umi-web3js-adapters";
@@ -71,15 +71,16 @@ export async function buildTokenLaunchTransaction(
     createSetAuthorityInstruction(mint.publicKey, payer, AuthorityType.FreezeAccount, null, [], TOKEN_PROGRAM_ID),
   );
 
-  // Build current Metaplex Token Metadata createV1 without ever holding the user's secret key.
-  // The wallet must sign the resulting transaction before it can be submitted.
+  // Build current Metaplex Token Metadata instructions without possessing the user's secret key.
+  // A noop signer makes the payer/update-authority signature an explicit requirement of the final wallet prompt.
   const umi = createUmi(connection.rpcEndpoint, "confirmed").use(mplTokenMetadata());
   const walletSigner = createNoopSigner(fromWeb3JsPublicKey(payer));
+  const mintSigner = createNoopSigner(fromWeb3JsPublicKey(mint.publicKey));
   umi.use(signerIdentity(walletSigner, false));
   umi.use(signerPayer(walletSigner));
 
-  const metadataInstructions = createV1(umi, {
-    mint: createNoopSigner(fromWeb3JsPublicKey(mint.publicKey)),
+  const metadataCreate = createV1(umi, {
+    mint: mintSigner,
     authority: walletSigner,
     payer: walletSigner,
     updateAuthority: publicKey(payer.toBase58()),
@@ -88,14 +89,24 @@ export async function buildTokenLaunchTransaction(
     uri: config.metadataUri.trim(),
     sellerFeeBasisPoints: percentAmount(0),
     tokenStandard: TokenStandard.Fungible,
-    isMutable: false,
+    // The metadata must be mutable during this transaction so updateV1 can atomically
+    // remove the update authority and make the account permanently immutable.
+    isMutable: true,
     creators: null,
     collectionDetails: null,
     decimals: config.decimals,
     printSupply: null,
   }).getInstructions().map(toWeb3JsInstruction);
 
-  tx.add(...metadataInstructions);
+  const metadataFinalize = updateV1(umi, {
+    mint: publicKey(mint.publicKey.toBase58()),
+    authority: walletSigner,
+    payer: walletSigner,
+    newUpdateAuthority: publicKey(PublicKey.default.toBase58()),
+    isMutable: false,
+  }).getInstructions().map(toWeb3JsInstruction);
+
+  tx.add(...metadataCreate, ...metadataFinalize);
   tx.feePayer = payer;
   const latest = await connection.getLatestBlockhash("confirmed");
   tx.recentBlockhash = latest.blockhash;
@@ -109,5 +120,6 @@ export async function buildTokenLaunchTransaction(
     associatedTokenAccount: ata[0].toBase58(),
     lastValidBlockHeight: latest.lastValidBlockHeight,
     metadataImmutable: true,
+    metadataUpdateAuthorityRevoked: true,
   };
 }
