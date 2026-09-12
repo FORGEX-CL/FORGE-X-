@@ -10,8 +10,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const payer = new PublicKey(body.payer);
     const supply = BigInt(body.supply);
+    const name = String(body.name || "").trim();
+    const symbol = String(body.symbol || "").trim().toUpperCase();
+    const metadataUri = String(body.metadataUri || "").trim();
 
-    // Fair Launch settings are protocol-owned and cannot be overridden by the client.
     assertFairLaunchSupply(supply);
     if (Number(body.decimals) !== FORGE_X_FAIR_LAUNCH.decimals) {
       throw new Error("FORGE X Fair Launch uses exactly 9 decimals");
@@ -19,19 +21,21 @@ export async function POST(request: NextRequest) {
     if (body.revokeMintAuthority !== true || body.revokeFreezeAuthority !== true) {
       throw new Error("FORGE X Fair Launch automatically revokes mint and freeze authority");
     }
+    if (!metadataUri) throw new Error("Metadata URI is required for Fair Launch");
 
     const connection = new Connection(RPC, "confirmed");
     const result = await buildTokenLaunchTransaction(connection, payer, {
-      name: String(body.name || ""),
-      symbol: String(body.symbol || "").toUpperCase(),
+      name,
+      symbol,
       decimals: FORGE_X_FAIR_LAUNCH.decimals,
       supply: FORGE_X_FAIR_LAUNCH.supply,
+      metadataUri,
       revokeMintAuthority: true,
       revokeFreezeAuthority: true,
     });
 
     return NextResponse.json({
-      network: "devnet",
+      network: RPC.includes("devnet") ? "devnet" : "configured",
       rules: {
         supply: FORGE_X_FAIR_LAUNCH.supply.toString(),
         decimals: FORGE_X_FAIR_LAUNCH.decimals,
@@ -39,6 +43,7 @@ export async function POST(request: NextRequest) {
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
         metadataAuthorityRevoked: FORGE_X_FAIR_LAUNCH.metadataAuthorityRevoked,
+        metadataImmutable: result.metadataImmutable,
         tradingFeeBps: FORGE_X_FAIR_LAUNCH.tradingFeeBps,
       },
       mint: result.mint,
