@@ -9,8 +9,9 @@ import {
   AuthorityType,
   getMinimumBalanceForRentExemptMint,
 } from "@solana/spl-token";
-import { createUmi, mplTokenMetadata, createV1, TokenStandard } from "@metaplex-foundation/mpl-token-metadata";
-import { createNoopSigner, publicKey, signerIdentity, signerPayer } from "@metaplex-foundation/umi";
+import { createV1, mplTokenMetadata, TokenStandard } from "@metaplex-foundation/mpl-token-metadata";
+import { createNoopSigner, publicKey, signerIdentity, signerPayer, percentAmount } from "@metaplex-foundation/umi";
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { fromWeb3JsPublicKey, toWeb3JsInstruction } from "@metaplex-foundation/umi-web3js-adapters";
 
 export type TokenLaunchConfig = {
@@ -56,13 +57,7 @@ export async function buildTokenLaunchTransaction(
       lamports: rent,
       programId: TOKEN_PROGRAM_ID,
     }),
-    createInitializeMintInstruction(
-      mint.publicKey,
-      config.decimals,
-      payer,
-      null,
-      TOKEN_PROGRAM_ID,
-    ),
+    createInitializeMintInstruction(mint.publicKey, config.decimals, payer, null, TOKEN_PROGRAM_ID),
     createAssociatedTokenAccountInstruction(
       payer,
       ata[0],
@@ -76,9 +71,8 @@ export async function buildTokenLaunchTransaction(
     createSetAuthorityInstruction(mint.publicKey, payer, AuthorityType.FreezeAccount, null, [], TOKEN_PROGRAM_ID),
   );
 
-  // Build the current Metaplex Token Metadata createV1 instruction without possessing
-  // the user's wallet secret. createNoopSigner deliberately leaves the required
-  // payer/authority signature for the connected wallet to add later.
+  // Build current Metaplex Token Metadata createV1 without ever holding the user's secret key.
+  // The wallet must sign the resulting transaction before it can be submitted.
   const umi = createUmi(connection.rpcEndpoint, "confirmed").use(mplTokenMetadata());
   const walletSigner = createNoopSigner(fromWeb3JsPublicKey(payer));
   umi.use(signerIdentity(walletSigner, false));
@@ -92,7 +86,7 @@ export async function buildTokenLaunchTransaction(
     name: config.name.trim(),
     symbol: config.symbol,
     uri: config.metadataUri.trim(),
-    sellerFeeBasisPoints: { basisPoints: 0n, identifier: "%", decimals: 2 },
+    sellerFeeBasisPoints: percentAmount(0),
     tokenStandard: TokenStandard.Fungible,
     isMutable: false,
     creators: null,
