@@ -1,12 +1,13 @@
 import Image from "next/image";
 import { Shell, SectionTitle, Card } from "../components/Shell";
 import { WalletButton } from "../components/WalletButton";
+import { TokenLaunchSigner } from "../components/TokenLaunchSigner";
 
 const steps = [
-  ["01", "Token details", "Name, symbol, description and logo."],
+  ["01", "Token details", "Name, symbol and metadata are supplied by the creator."],
   ["02", "Fair Launch", "FORGE X fixes the supply and launch rules automatically."],
   ["03", "Developer buy", "The developer must make the first buy before public trading opens."],
-  ["04", "Review & sign", "Every blockchain transaction is reviewed before the connected wallet signs it."],
+  ["04", "Review & sign", "The connected wallet signs the real blockchain transaction."],
 ];
 
 const rules = [
@@ -27,7 +28,7 @@ export default function Launch() {
             <Image src="/forge-x-mark.svg" alt="FORGE X" width={80} height={80} className="rounded-2xl" priority />
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f5c542]">FORGE X</p>
-              <h1 className="mt-1 text-3xl font-black tracking-tight">Fair Launch</h1>
+              <h1 className="mt-1 text-3xl font-black tracking-tight">Launch</h1>
             </div>
           </div>
           <WalletButton />
@@ -36,7 +37,7 @@ export default function Launch() {
         <SectionTitle
           eyebrow="Launch"
           title="Launch without manual complexity."
-          text="FORGE X handles the Fair Launch configuration automatically while keeping the final blockchain actions under the connected wallet's signature."
+          text="Fair Launch applies FORGE X protocol rules automatically. The wallet remains the authority for every user-funded blockchain action."
         />
 
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
@@ -50,34 +51,7 @@ export default function Launch() {
         </div>
 
         <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_.8fr]">
-          <Card>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#f5c542]">Fair Launch mode</p>
-                <h2 className="mt-2 text-2xl font-black">Automatic configuration</h2>
-              </div>
-              <span className="rounded-full border border-[#f5c542]/30 bg-[#f5c542]/10 px-3 py-1 text-xs font-bold text-[#f5c542]">DEVNET</span>
-            </div>
-
-            <div className="mt-7 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm text-white/60">Token name<input className="forge-input" placeholder="My Token" /></label>
-              <label className="text-sm text-white/60">Symbol<input className="forge-input" placeholder="TOKEN" /></label>
-              <label className="text-sm text-white/60 sm:col-span-2">Description<textarea className="forge-input min-h-28" placeholder="Tell the market what this project is about." /></label>
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
-              <p className="text-sm font-bold">What FORGE X locks automatically</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {[["Fixed supply", "1B tokens"], ["Mint authority", "Revoked"], ["Freeze authority", "Revoked"], ["Metadata", "Finalized after launch"]].map(([a, b]) => (
-                  <div key={a} className="flex items-center justify-between rounded-xl bg-white/[0.03] px-4 py-3 text-sm">
-                    <span className="text-white/50">{a}</span><span className="font-semibold">{b}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button className="mt-6 rounded-full bg-[#f5c542] px-6 py-3 font-bold text-black">Review Fair Launch</button>
-          </Card>
+          <TokenLaunchSigner />
 
           <Card>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#f5c542]">Protocol rules</p>
@@ -88,7 +62,10 @@ export default function Launch() {
                 </div>
               ))}
             </div>
-            <p className="mt-5 text-xs leading-5 text-white/35">These values are the current Devnet protocol configuration. Mainnet economics remain subject to final security and economic testing.</p>
+            <div className="mt-5 rounded-xl border border-[#f5c542]/15 bg-[#f5c542]/5 p-4 text-xs leading-5 text-white/55">
+              Fair Launch also requires mint authority, freeze authority and metadata update authority to be revoked, with metadata made immutable in the launch transaction.
+            </div>
+            <p className="mt-4 text-xs leading-5 text-white/35">Current environment is controlled by the configured Solana cluster. Mainnet release requires successful Devnet end-to-end testing and security review.</p>
           </Card>
         </div>
       </main>
