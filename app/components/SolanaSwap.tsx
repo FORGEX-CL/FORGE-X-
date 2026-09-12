@@ -7,9 +7,14 @@ const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.
 const POLL_MS = 500;
 const TIMEOUT_MS = 90_000;
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+type SolanaProvider = {
+  publicKey?: { toString(): string };
+  signTransaction?: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
+};
+
+declare global { interface Window { solana?: SolanaProvider } }
+
+function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 async function waitForSignature(connection: Connection, signature: string) {
   const startedAt = Date.now();
@@ -22,18 +27,18 @@ async function waitForSignature(connection: Connection, signature: string) {
   throw new Error("Timed out waiting for swap confirmation");
 }
 
-export function SolanaSwap({ quote }: { quote: any }) {
+export function SolanaSwap({ quote }: { quote: unknown }) {
   const [status, setStatus] = useState<"idle" | "signing" | "confirming" | "confirmed" | "failed">("idle");
   const [signature, setSignature] = useState("");
 
   async function signAndSend() {
-    const provider = (window as any).solana;
+    const provider = window.solana;
     if (!provider?.publicKey || !provider.signTransaction) return setStatus("failed");
     try {
       setStatus("signing");
       const response = await fetch("/api/swap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteResponse: quote, userPublicKey: provider.publicKey.toString() }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not build transaction");
+      const data = await response.json() as { swapTransaction?: string; error?: string };
+      if (!response.ok || !data.swapTransaction) throw new Error(data.error || "Could not build transaction");
       const transaction = VersionedTransaction.deserialize(Buffer.from(data.swapTransaction, "base64"));
       const signed = await provider.signTransaction(transaction);
       setStatus("confirming");
