@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Connection, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 
 const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 const POLL_MS = 500;
@@ -51,7 +51,7 @@ export function TokenLaunchSigner() {
       const latest = await connection.getLatestBlockhash("confirmed");
       tx.recentBlockhash = latest.blockhash;
       tx.lastValidBlockHeight = latest.lastValidBlockHeight;
-      tx.feePayer = tx.feePayer ?? new (await import("@solana/web3.js")).PublicKey(wallet.publicKey.toString());
+      tx.feePayer = tx.feePayer ?? new PublicKey(wallet.publicKey.toString());
       const signed = await wallet.signTransaction(tx);
       setStatus("confirming");
       const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
