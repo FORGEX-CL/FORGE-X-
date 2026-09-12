@@ -9,4 +9,5 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 solana-program = "=4.1.0"
+solana-system-interface = { version = "=3.3.0", features = ["bincode"] }
 spl-token = "=9.0.0"
