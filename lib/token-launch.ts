@@ -13,7 +13,6 @@ import { createV1, updateV1, mplTokenMetadata, TokenStandard } from "@metaplex-f
 import { createNoopSigner, publicKey, signerIdentity, signerPayer, percentAmount } from "@metaplex-foundation/umi";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { fromWeb3JsPublicKey, toWeb3JsInstruction } from "@metaplex-foundation/umi-web3js-adapters";
-import { buildInitializeFairLaunch, buildSeedFairLaunchVault, fairLaunchStatePda, fairLaunchVaultAta } from "./fair-launch-program";
 
 export type TokenLaunchConfig = {
   name: string;
@@ -23,7 +22,6 @@ export type TokenLaunchConfig = {
   metadataUri: string;
   revokeMintAuthority: boolean;
   revokeFreezeAuthority: boolean;
-  fairLaunchGraduationSolLamports?: bigint;
 };
 
 export async function buildTokenLaunchTransaction(
@@ -38,12 +36,7 @@ export async function buildTokenLaunchTransaction(
   if (config.metadataUri.length > 200) throw new Error("Metadata URI is too long");
   if (!Number.isInteger(config.decimals) || config.decimals < 0 || config.decimals > 9) throw new Error("Decimals must be 0-9");
   if (config.supply <= 0n) throw new Error("Supply must be greater than zero");
-  if (!config.revokeMintAuthority || !config.revokeFreezeAuthority) {
-    throw new Error("FORGE X launch requires mint and freeze authority revocation");
-  }
-  if (config.fairLaunchGraduationSolLamports !== undefined && config.fairLaunchGraduationSolLamports <= 0n) {
-    throw new Error("Fair Launch graduation target must be positive");
-  }
+  if (!config.revokeMintAuthority || !config.revokeFreezeAuthority) throw new Error("FORGE X launch requires mint and freeze authority revocation");
 
   const mint = Keypair.generate();
   const ata = await PublicKey.findProgramAddress(
@@ -55,29 +48,14 @@ export async function buildTokenLaunchTransaction(
   if (rawSupply > 18446744073709551615n) throw new Error("Supply exceeds SPL token limit");
 
   const tx = new Transaction().add(
-    SystemProgram.createAccount({
-      fromPubkey: payer,
-      newAccountPubkey: mint.publicKey,
-      space: 82,
-      lamports: rent,
-      programId: TOKEN_PROGRAM_ID,
-    }),
+    SystemProgram.createAccount({ fromPubkey: payer, newAccountPubkey: mint.publicKey, space: 82, lamports: rent, programId: TOKEN_PROGRAM_ID }),
     createInitializeMintInstruction(mint.publicKey, config.decimals, payer, null, TOKEN_PROGRAM_ID),
-    createAssociatedTokenAccountInstruction(
-      payer,
-      ata[0],
-      payer,
-      mint.publicKey,
-      TOKEN_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID,
-    ),
+    createAssociatedTokenAccountInstruction(payer, ata[0], payer, mint.publicKey, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID),
     createMintToInstruction(mint.publicKey, ata[0], payer, rawSupply, [], TOKEN_PROGRAM_ID),
     createSetAuthorityInstruction(mint.publicKey, payer, AuthorityType.MintTokens, null, [], TOKEN_PROGRAM_ID),
     createSetAuthorityInstruction(mint.publicKey, payer, AuthorityType.FreezeAccount, null, [], TOKEN_PROGRAM_ID),
   );
 
-  // Build current Metaplex Token Metadata instructions without possessing the user's secret key.
-  // A noop signer makes the payer/update-authority signature an explicit requirement of the final wallet prompt.
   const umi = createUmi(connection.rpcEndpoint, "confirmed").use(mplTokenMetadata());
   const walletSigner = createNoopSigner(fromWeb3JsPublicKey(payer));
   const mintSigner = createNoopSigner(fromWeb3JsPublicKey(mint.publicKey));
@@ -110,24 +88,6 @@ export async function buildTokenLaunchTransaction(
   }).getInstructions().map(toWeb3JsInstruction);
 
   tx.add(...metadataCreate, ...metadataFinalize);
-
-  // For Fair Launch, initialize the curve and move the complete fixed supply into
-  // the program-controlled vault in the same signed transaction. This removes the
-  // unsafe intermediate state where a launched mint exists without its curve.
-  let fairLaunchState: string | null = null;
-  let fairLaunchVault: string | null = null;
-  if (config.fairLaunchGraduationSolLamports !== undefined) {
-    tx.add(
-      buildInitializeFairLaunch(mint.publicKey, payer, config.fairLaunchGraduationSolLamports),
-      ...buildSeedFairLaunchVault(mint.publicKey, payer),
-    );
-    const programId = process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID;
-    if (!programId) throw new Error("FORGE X Fair Launch program ID is not configured");
-    const fairLaunchProgramId = new PublicKey(programId);
-    fairLaunchState = fairLaunchStatePda(mint.publicKey, fairLaunchProgramId).toBase58();
-    fairLaunchVault = fairLaunchVaultAta(mint.publicKey, fairLaunchProgramId).toBase58();
-  }
-
   tx.feePayer = payer;
   const latest = await connection.getLatestBlockhash("confirmed");
   tx.recentBlockhash = latest.blockhash;
@@ -139,8 +99,6 @@ export async function buildTokenLaunchTransaction(
     mint: mint.publicKey.toBase58(),
     mintKeypair: mint,
     associatedTokenAccount: ata[0].toBase58(),
-    fairLaunchState,
-    fairLaunchVault,
     lastValidBlockHeight: latest.lastValidBlockHeight,
     metadataImmutable: true,
     metadataUpdateAuthorityRevoked: true,
