@@ -11,6 +11,8 @@ import { buildMigrateFairLaunchToDeveloper, fairLaunchStatePda, fairLaunchVaultA
 const STATE_VERSION = 2;
 const STATUS_GRADUATED = 2;
 const STATE_LEN = 82;
+const SPL_TOKEN_ACCOUNT_LEN = 165;
+const SPL_TOKEN_AMOUNT_OFFSET = 64;
 
 export type GraduationTransactionInput = {
   connection: Connection;
@@ -35,15 +37,8 @@ function readU64(data: Buffer, offset: number): bigint {
   return data.readBigUInt64LE(offset);
 }
 
-function assertOnChainGraduationState(
-  accountData: Buffer,
-  expectedDeveloper: PublicKey,
-  expectedSol: bigint,
-  expectedTokens: bigint,
-): void {
-  if (accountData.length < STATE_LEN || accountData[0] !== STATE_VERSION) {
-    throw new Error("Invalid Fair Launch state account");
-  }
+function assertOnChainGraduationState(accountData: Buffer, expectedDeveloper: PublicKey, expectedSol: bigint, expectedTokens: bigint): void {
+  if (accountData.length < STATE_LEN || accountData[0] !== STATE_VERSION) throw new Error("Invalid Fair Launch state account");
   const developer = new PublicKey(accountData.subarray(1, 33));
   const status = accountData[33];
   const realSolRaised = readU64(accountData, 42);
@@ -54,15 +49,16 @@ function assertOnChainGraduationState(
   if (virtualTokenReserve !== expectedTokens) throw new Error("Graduation token reserve does not match on-chain state");
 }
 
-export async function prepareRaydiumCpmmGraduation(
-  input: GraduationTransactionInput,
-): Promise<PreparedGraduationTransaction> {
+function readTokenAccountAmount(accountData: Buffer): bigint {
+  if (accountData.length < SPL_TOKEN_ACCOUNT_LEN) throw new Error("Fair Launch vault is not a valid SPL token account");
+  return readU64(accountData, SPL_TOKEN_AMOUNT_OFFSET);
+}
+
+export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionInput): Promise<PreparedGraduationTransaction> {
   if (input.solLamports <= 0n || input.tokenBaseUnits <= 0n) throw new Error("Graduation liquidity must be positive");
   if (input.mint.equals(PublicKey.default)) throw new Error("Invalid graduation mint");
 
-  const programId = process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID
-    ? new PublicKey(process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID)
-    : null;
+  const programId = process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID ? new PublicKey(process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID) : null;
   if (!programId) throw new Error("FORGE X Fair Launch program ID is not configured");
 
   const state = fairLaunchStatePda(input.mint, programId);
@@ -71,13 +67,13 @@ export async function prepareRaydiumCpmmGraduation(
   if (!stateInfo) throw new Error("Fair Launch state account was not found");
   assertOnChainGraduationState(stateInfo.data, input.developer, input.solLamports, input.tokenBaseUnits);
 
-  const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
-  const raydium = await Raydium.load({
-    owner: input.developer,
-    connection: input.connection,
-    cluster,
-  });
+  const vaultInfo = await input.connection.getAccountInfo(vault, "confirmed");
+  if (!vaultInfo || !vaultInfo.owner.equals(TOKEN_PROGRAM_ID)) throw new Error("Fair Launch token vault is missing or owned by the wrong token program");
+  const actualVaultAmount = readTokenAccountAmount(vaultInfo.data);
+  if (actualVaultAmount !== input.tokenBaseUnits) throw new Error("Graduation token amount does not match the actual Fair Launch vault balance");
 
+  const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
+  const raydium = await Raydium.load({ owner: input.developer, connection: input.connection, cluster });
   const tokenInfo = await raydium.token.getTokenInfo(input.mint.toBase58());
   const nativeInfo = await raydium.token.getTokenInfo("So11111111111111111111111111111111111111112");
   const feeConfigs = await raydium.api.getCpmmConfigs();
@@ -89,15 +85,9 @@ export async function prepareRaydiumCpmmGraduation(
     ? { ...feeConfigs[0], id: getCpmmPdaAmmConfigId(cpmmProgramId, feeConfigs[0].index).publicKey.toBase58() }
     : feeConfigs[0];
 
-  const developerTokenAccount = getAssociatedTokenAddressSync(
-    input.mint,
-    input.developer,
-    false,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
-  );
+  const developerTokenAccount = getAssociatedTokenAddressSync(input.mint, input.developer, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
   const developerTokenInfo = await input.connection.getAccountInfo(developerTokenAccount, "confirmed");
-  if (!developerTokenInfo) {
+  if (!developerTokenInfo || !developerTokenInfo.owner.equals(TOKEN_PROGRAM_ID)) {
     throw new Error("Developer token account must exist before atomic graduation; the Fair Launch first buy normally creates it");
   }
 
@@ -120,11 +110,8 @@ export async function prepareRaydiumCpmmGraduation(
   const firstNonCompute = instructions.findIndex((ix: TransactionInstruction) => !ix.programId.equals(ComputeBudgetProgram.programId));
   instructions.splice(firstNonCompute < 0 ? instructions.length : firstNonCompute, 0, migrationInstruction);
 
-  const rebuilt = await builder.versionBuild({
-    txVersion: TxVersion.V0,
-    extInfo,
-    lookupTableAddress: builder.AllTxData.lookupTableAddress,
-  });
+  const rebuilt = await builder.versionBuild({ txVersion: TxVersion.V0, extInfo, lookupTableAddress: builder.AllTxData.lookupTableAddress });
+  if (!(rebuilt.transaction instanceof VersionedTransaction)) throw new Error("Raydium CPMM graduation did not produce a versioned transaction");
 
   return {
     transaction: rebuilt.transaction,
