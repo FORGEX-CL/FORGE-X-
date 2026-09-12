@@ -27,6 +27,7 @@ const STATUS_MIGRATED: u8 = 3;
 const SUPPLY: u64 = 1_000_000_000;
 const DECIMALS: u8 = 9;
 const TOTAL_SUPPLY_BASE_UNITS: u64 = SUPPLY * 1_000_000_000;
+const INITIAL_VIRTUAL_SOL_RESERVE: u64 = 30_000_000_000;
 const TRADE_FEE_BPS: u64 = 50;
 const BPS_DENOMINATOR: u64 = 10_000;
 const MIN_DEV_BUY_LAMPORTS: u64 = 500_000_000;
@@ -46,7 +47,6 @@ struct State {
 
 impl State {
     const LEN: usize = 82;
-
     fn pack(&self, data: &mut [u8]) -> Result<(), ProgramError> {
         if data.len() < Self::LEN { return Err(ProgramError::AccountDataTooSmall); }
         data[0] = STATE_VERSION;
@@ -60,7 +60,6 @@ impl State {
         data[74..82].copy_from_slice(&self.created_at.to_le_bytes());
         Ok(())
     }
-
     fn unpack(data: &[u8]) -> Result<Self, ProgramError> {
         if data.len() < Self::LEN || data[0] != STATE_VERSION { return Err(ProgramError::InvalidAccountData); }
         Ok(Self {
@@ -111,7 +110,7 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     }
     if state_account.owner != program_id || state_account.data_len() < State::LEN { return Err(ProgramError::InvalidAccountData); }
     if state_account.try_borrow_data()?[0] != 0 { return Err(ProgramError::AccountAlreadyInitialized); }
-    let state = State { developer: *developer.key, status: STATUS_WAITING_FOR_DEV_BUY, developer_bought_lamports: 0, real_sol_raised: 0, virtual_sol_reserve: 1_000_000_000, virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS, graduation_sol, created_at: Clock::get()?.unix_timestamp };
+    let state = State { developer: *developer.key, status: STATUS_WAITING_FOR_DEV_BUY, developer_bought_lamports: 0, real_sol_raised: 0, virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE, virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS, graduation_sol, created_at: Clock::get()?.unix_timestamp };
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
     Ok(())
 }
@@ -122,26 +121,22 @@ fn parse_amount(data: &[u8]) -> Result<u64, ProgramError> {
     if amount == 0 { return Err(ProgramError::InvalidArgument); }
     Ok(amount)
 }
-
 fn fee(amount: u64) -> Result<(u64, u64), ProgramError> {
     let f = amount.checked_mul(TRADE_FEE_BPS).ok_or(ProgramError::ArithmeticOverflow)? / BPS_DENOMINATOR;
     Ok((f, amount.checked_sub(f).ok_or(ProgramError::ArithmeticOverflow)?))
 }
-
 fn buy_quote(net: u64, vs: u64, vt: u64) -> Result<u64, ProgramError> {
     let k = (vs as u128).checked_mul(vt as u128).ok_or(ProgramError::ArithmeticOverflow)?;
     let next_vs = (vs as u128).checked_add(net as u128).ok_or(ProgramError::ArithmeticOverflow)?;
     let next_vt = k / next_vs;
     u64::try_from((vt as u128).checked_sub(next_vt).ok_or(ProgramError::ArithmeticOverflow)?).map_err(|_| ProgramError::ArithmeticOverflow)
 }
-
 fn sell_quote(token_in: u64, vs: u64, vt: u64) -> Result<u64, ProgramError> {
     if token_in == 0 || token_in >= vt { return Err(ProgramError::InvalidArgument); }
     let numerator = (token_in as u128).checked_mul(vs as u128).ok_or(ProgramError::ArithmeticOverflow)?;
     let denominator = (vt as u128).checked_add(token_in as u128).ok_or(ProgramError::ArithmeticOverflow)?;
     u64::try_from(numerator / denominator).map_err(|_| ProgramError::ArithmeticOverflow)
 }
-
 fn validate_token_accounts(mint: &AccountInfo, vault: &AccountInfo, user: &AccountInfo, user_token: &AccountInfo, program_id: &Pubkey) -> Result<(TokenAccount, TokenAccount), ProgramError> {
     if vault.owner != &spl_token::id() || user_token.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
     let v = TokenAccount::unpack(&vault.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
@@ -209,47 +204,28 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     let (expected_state, _) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
     if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
     let state = State::unpack(&state_account.try_borrow_data()?)?;
-    if state.status != STATUS_GRADUATED { return Err(ProgramError::InvalidArgument); }
-    if state.real_sol_raised < state.graduation_sol { return Err(ProgramError::InvalidArgument); }
+    if state.status != STATUS_GRADUATED || state.real_sol_raised < state.graduation_sol { return Err(ProgramError::InvalidArgument); }
     Ok(())
 }
 
 fn migrate_to_developer<'a, I>(program_id: &Pubkey, it: &mut I) -> ProgramResult
 where I: Iterator<Item = &'a AccountInfo<'a>> {
-    let state_account = next_account_info(it)?;
-    let mint = next_account_info(it)?;
-    let developer = next_account_info(it)?;
-    let token_vault = next_account_info(it)?;
-    let destination_token = next_account_info(it)?;
-    let system = next_account_info(it)?;
-    let token_program = next_account_info(it)?;
-
-    if !state_account.is_writable || !developer.is_signer || !developer.is_writable || !token_vault.is_writable || !destination_token.is_writable || !system_program::check_id(system.key) || token_program.key != &spl_token::id() {
-        return Err(ProgramError::InvalidArgument);
-    }
-
+    let state_account = next_account_info(it)?; let mint = next_account_info(it)?; let developer = next_account_info(it)?; let token_vault = next_account_info(it)?; let destination_token = next_account_info(it)?; let system = next_account_info(it)?; let token_program = next_account_info(it)?;
+    if !state_account.is_writable || !developer.is_signer || !developer.is_writable || !token_vault.is_writable || !destination_token.is_writable || !system_program::check_id(system.key) || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
     let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
     if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
-
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
-    if state.status != STATUS_GRADUATED || state.real_sol_raised < state.graduation_sol { return Err(ProgramError::InvalidArgument); }
-    if state.developer != *developer.key { return Err(ProgramError::InvalidArgument); }
-
+    if state.status != STATUS_GRADUATED || state.real_sol_raised < state.graduation_sol || state.developer != *developer.key { return Err(ProgramError::InvalidArgument); }
     let vault = TokenAccount::unpack(&token_vault.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
     let destination = TokenAccount::unpack(&destination_token.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
     if vault.owner != expected_state || vault.mint != *mint.key || destination.owner != *developer.key || destination.mint != *mint.key { return Err(ProgramError::InvalidArgument); }
     if vault.amount == 0 { return Err(ProgramError::InsufficientFunds); }
-
     let rent_floor = Rent::get()?.minimum_balance(State::LEN);
     let migration_sol = state.real_sol_raised;
     if state_account.lamports().checked_sub(migration_sol).unwrap_or(0) < rent_floor { return Err(ProgramError::InsufficientFunds); }
-
     let token_ix = token_instruction::transfer_checked(&spl_token::id(), token_vault.key, mint.key, destination_token.key, state_account.key, &[], vault.amount, DECIMALS).map_err(|_| ProgramError::InvalidInstructionData)?;
     invoke_signed(&token_ix, &[token_vault.clone(), mint.clone(), destination_token.clone(), state_account.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?;
-    if migration_sol > 0 {
-        invoke_signed(&system_instruction::transfer(state_account.key, developer.key, migration_sol), &[state_account.clone(), developer.clone(), system.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?;
-    }
-
+    if migration_sol > 0 { invoke_signed(&system_instruction::transfer(state_account.key, developer.key, migration_sol), &[state_account.clone(), developer.clone(), system.clone()], &[&[STATE_SEED, mint.key.as_ref(), &[bump]]])?; }
     state.real_sol_raised = 0;
     state.virtual_sol_reserve = 0;
     state.virtual_token_reserve = 0;
