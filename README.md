@@ -36,6 +36,22 @@ Protocol invariants:
 
 The Fair Launch state and token vault are PDAs. Buys and sells use PDA-signed SPL/System Program CPIs. Graduation is terminal for curve trading.
 
+### Launch transaction boundaries
+
+The token-creation transaction is deliberately kept separate from curve initialization. Current legacy/v0 Solana transactions have a 1,232-byte serialized limit, so FORGE X does not attempt to pack token creation, Metaplex metadata, Fair Launch initialization, ATA creation, and vault seeding into one oversized message.
+
+The launch flow is:
+
+1. Create the SPL mint, fixed supply and developer token account.
+2. Revoke mint/freeze authorities and make metadata immutable in the same wallet-signed launch transaction.
+3. Confirm that transaction on Solana.
+4. Prepare and sign a second transaction that initializes the Fair Launch PDA and moves the full supply into its vault.
+5. Confirm initialization.
+6. Prepare and sign the required **0.5 SOL minimum developer first buy**.
+7. Only after that confirmation does public curve trading open.
+
+Every step is real wallet signing plus on-chain confirmation; UI state is never treated as proof.
+
 ## Graduation and Raydium CPMM
 
 Graduation is prepared from live chain state. The client verifies the Fair Launch state and vault balance before building the pool transaction.
@@ -58,6 +74,7 @@ The application verifies important facts against Solana RPC rather than treating
 - Fair Launch mint supply/decimals/authority state
 - Fair Launch state status and accounting
 - Graduation reserve amounts
+- Fair Launch token-vault ownership and balances
 - Raydium pool account ownership
 - Wallet-signed transaction confirmation
 - Transaction errors and expiration
@@ -66,7 +83,7 @@ New Raydium devnet pools should be checked through RPC because Raydium's API can
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and configure the RPC endpoint and deployed Fair Launch program ID.
+Copy `.env.example` to `.env.local` and configure the RPC endpoint, deployed Fair Launch program ID, and platform fee receiver.
 
 Required for a live Fair Launch deployment:
 
@@ -74,6 +91,8 @@ Required for a live Fair Launch deployment:
 - `SOLANA_RPC_URL`
 - `NEXT_PUBLIC_SOLANA_CLUSTER`
 - `NEXT_PUBLIC_FORGE_X_PROGRAM_ID`
+- `FORGE_X_FEE_RECEIVER`
+- `NEXT_PUBLIC_FORGE_X_FEE_RECEIVER` for browser-side trade preparation
 - `PINATA_JWT` for server-side metadata uploads
 
 Never commit secrets.
