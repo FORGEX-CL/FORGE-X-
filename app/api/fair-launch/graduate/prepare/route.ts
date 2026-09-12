@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { prepareRaydiumCpmmGraduation } from "@/lib/raydium-graduation-builder";
 
-const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
+const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
 
 function parsePublicKey(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       developerTokenAccount: prepared.developerTokenAccount.toBase58(),
       solLamports: prepared.solLamports.toString(),
       tokenBaseUnits: prepared.tokenBaseUnits.toString(),
+      cluster: CLUSTER,
       atomic: true,
       instructions: ["Fair Launch PDA migration", "Raydium CPMM pool creation"],
     });
