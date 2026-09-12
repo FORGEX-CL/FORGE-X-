@@ -1,5 +1,6 @@
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { DEFAULT_FAIR_LAUNCH, FairLaunchConfig } from "./fair-launch";
+import { prepareRaydiumCpmmGraduation } from "./raydium-graduation-builder";
 
 export type GraduationPlan = {
   sourceState: "GRADUATED";
@@ -35,12 +36,23 @@ export function assertPoolDestination(address: string): PublicKey {
   try { return new PublicKey(address); } catch { throw new Error("Invalid liquidity-pool destination address"); }
 }
 
+export async function prepareUnsignedPoolTransaction(params: {
+  connection: Connection;
+  developer: PublicKey;
+  mint: PublicKey;
+  solLamports: bigint;
+  tokenBaseUnits: bigint;
+}): Promise<{ transaction: VersionedTransaction; poolId: PublicKey }> {
+  const prepared = await prepareRaydiumCpmmGraduation(params);
+  return { transaction: prepared.transaction, poolId: prepared.poolId };
+}
+
 /**
- * Never return an empty transaction for graduation. Raydium CPMM migration
- * must be constructed from the official Raydium instructions with the
- * launch-state PDA as the real custody authority. Failing closed prevents
- * the UI from treating an empty transaction as a successful migration.
+ * Kept as a hard failure for legacy callers that do not provide the real
+ * chain context. Graduation must use prepareUnsignedPoolTransaction so the
+ * transaction contains the real PDA migration plus official Raydium CPMM
+ * instructions; an empty placeholder is never valid.
  */
 export function createUnsignedPoolTransaction(): never {
-  throw new Error("Raydium CPMM migration instructions are not configured; refusing to create an empty graduation transaction");
+  throw new Error("Graduation requires chain context; use prepareUnsignedPoolTransaction with a developer wallet and mint");
 }
