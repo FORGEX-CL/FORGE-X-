@@ -28,7 +28,13 @@ export function fairLaunchVaultAta(mint: PublicKey, programId: PublicKey): Publi
   return getAssociatedTokenAddressSync(mint, fairLaunchStatePda(mint, programId), true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 }
 
-export function buildInitializeFairLaunch(mint: PublicKey, developer: PublicKey, graduationSolLamports: bigint, programId = FORGE_X_FAIR_LAUNCH_PROGRAM_ID): TransactionInstruction {
+export function buildInitializeFairLaunch(
+  mint: PublicKey,
+  developer: PublicKey,
+  graduationSolLamports: bigint,
+  feeReceiver: PublicKey,
+  programId = FORGE_X_FAIR_LAUNCH_PROGRAM_ID,
+): TransactionInstruction {
   if (!programId) throw new Error("FORGE X Fair Launch program ID is not configured");
   if (graduationSolLamports <= 0n) throw new Error("Graduation target must be positive");
   const state = fairLaunchStatePda(mint, programId);
@@ -38,9 +44,10 @@ export function buildInitializeFairLaunch(mint: PublicKey, developer: PublicKey,
       { pubkey: state, isSigner: false, isWritable: true },
       { pubkey: mint, isSigner: false, isWritable: false },
       { pubkey: developer, isSigner: true, isWritable: true },
+      { pubkey: feeReceiver, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: Buffer.concat([Buffer.from([0]), developer.toBuffer(), u64(graduationSolLamports)]),
+    data: Buffer.concat([Buffer.from([0]), developer.toBuffer(), u64(graduationSolLamports), feeReceiver.toBuffer()]),
   });
 }
 
