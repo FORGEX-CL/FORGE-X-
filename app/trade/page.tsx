@@ -11,7 +11,7 @@ export default function Trade() {
             <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Execution model</p>
             <h2 className="mt-3 text-2xl font-black">Bonding-curve trading</h2>
             <div className="mt-7 grid gap-4 sm:grid-cols-2">
-              {["0.50% protocol trade fee", "Developer first buy: 0.5 SOL minimum", "Public trading opens after first buy", "Trading stops when graduation is reached", "Graduation target: 85 SOL", "Post-graduation liquidity: Raydium CPMM"].map((item) => (
+              {["0.50% protocol trade fee", "Developer first buy: 0.05 SOL minimum", "Public trading opens after first buy", "Trading stops when graduation is reached", "Graduation target: 85 SOL", "Post-graduation liquidity: Raydium CPMM"].map((item) => (
                 <div key={item} className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">{item}</div>
               ))}
             </div>
