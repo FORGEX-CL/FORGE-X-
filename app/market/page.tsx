@@ -20,6 +20,7 @@ type Pair = {
   liquidity?: { usd?: number };
   dexId?: string;
   forgeRisk?: Risk;
+  forgeStatus?: "WAITING_FOR_DEV_BUY" | "LIVE" | "GRADUATED" | "MIGRATED" | null;
 };
 
 const money = (value?: number) => value == null ? "—" : value >= 1_000_000 ? `$${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `$${(value / 1_000).toFixed(1)}K` : `$${value.toFixed(0)}`;
@@ -72,20 +73,20 @@ export default function Market() {
           const risk = pair.forgeRisk;
           const mint = pair.baseToken?.address;
           const blocked = risk?.hold || risk?.level === "CRITICAL";
+          const canTrade = !blocked && pair.forgeStatus === "LIVE" && Boolean(mint);
           return <div key={`${pair.pairAddress}-${pair.dexId}`} className="grid gap-3 border-b border-white/5 px-2 py-5 text-sm last:border-0 md:grid-cols-7 md:gap-4 md:items-center">
             <div>
               <div className="font-semibold">{pair.baseToken?.symbol ?? "Unknown"}/{pair.quoteToken?.symbol ?? "—"}</div>
               <div className="text-xs text-white/35">{pair.baseToken?.name ?? ""}</div>
-              <div className={`mt-1 text-[10px] font-bold uppercase tracking-wider ${blocked ? "text-red-300" : risk?.impersonation || risk?.level === "HIGH" ? "text-amber-300" : "text-emerald-300"}`}>
-                {riskLabel(risk)}{risk?.score != null ? ` · ${risk.score}/100` : ""}
-              </div>
+              <div className={`mt-1 text-[10px] font-bold uppercase tracking-wider ${blocked ? "text-red-300" : risk?.impersonation || risk?.level === "HIGH" ? "text-amber-300" : "text-emerald-300"}`}>{riskLabel(risk)}{risk?.score != null ? ` · ${risk.score}/100` : ""}</div>
+              {pair.forgeStatus && <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-[#f5c542]">FORGE {pair.forgeStatus.replaceAll("_", " ")}</div>}
             </div>
             <span>{pair.priceUsd ? `$${Number(pair.priceUsd).toPrecision(6)}` : "—"}</span>
             <span className={change >= 0 ? "text-emerald-400" : "text-red-400"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span>
             <span className="text-white/50">{money(pair.volume?.h24)}</span>
             <span className="text-white/50">{money(pair.liquidity?.usd)}</span>
             <span className="text-white/50">{pair.dexId ?? "—"}</span>
-            {mint && !blocked ? <a href={`/trade?mint=${encodeURIComponent(mint)}`} className="inline-flex w-fit rounded-lg border border-[#f5c542]/30 px-3 py-2 text-xs font-bold text-[#f5c542] hover:bg-[#f5c542]/10">Open trade</a> : <span className="text-xs text-white/25">Trading blocked</span>}
+            {canTrade ? <a href={`/trade?mint=${encodeURIComponent(mint!)}`} className="inline-flex w-fit rounded-lg border border-[#f5c542]/30 px-3 py-2 text-xs font-bold text-[#f5c542] hover:bg-[#f5c542]/10">Trade on FORGE</a> : <span className="text-xs text-white/25">{blocked ? "Trading blocked" : pair.forgeStatus === "WAITING_FOR_DEV_BUY" ? "Awaiting launch" : "External / unavailable"}</span>}
           </div>;
         })}
       </Card>
