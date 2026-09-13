@@ -97,10 +97,21 @@ export function RaydiumCpmmTrader() {
       if (!response.ok || !data.transaction || !data.recentBlockhash || typeof data.lastValidBlockHeight !== "number" || !data.outputAmount || !data.outputMint) throw new Error(data.error || "Unable to prepare Raydium swap");
       setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount || "0", tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
       setStatus("signing");
-      const signed = await w.signTransaction(VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64")));
-      setStatus("confirming");
+      const transaction = VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64"));
       const connection = new Connection(RPC, "confirmed");
-      const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
+      // Wallet approval can take long enough for a blockhash to expire. Never ask the
+      // RPC node to accept an already-expired signed transaction.
+      const blockHeightBeforeSigning = await connection.getBlockHeight("confirmed");
+      if (blockHeightBeforeSigning > data.lastValidBlockHeight) {
+        throw new Error("Swap transaction expired before wallet approval. Please try again.");
+      }
+      const signed = await w.signTransaction(transaction);
+      const blockHeightAfterSigning = await connection.getBlockHeight("confirmed");
+      if (blockHeightAfterSigning > data.lastValidBlockHeight) {
+        throw new Error("Swap transaction expired while waiting for wallet approval. Please try again.");
+      }
+      setStatus("confirming");
+      const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 5 });
       setSignature(txid);
       await waitFor(connection, txid, data.lastValidBlockHeight);
       setStatus("confirmed");
