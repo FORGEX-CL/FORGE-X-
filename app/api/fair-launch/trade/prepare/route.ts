@@ -23,19 +23,12 @@ export async function POST(request: NextRequest) {
 
     const connection = new Connection(RPC, "confirmed");
     const latest = await connection.getLatestBlockhash("confirmed");
-    const instructions = side === "buy"
-      ? buildFairLaunchBuyWithAta(mint, trader, amount, feeReceiver)
-      : [buildFairLaunchSell(mint, trader, amount, feeReceiver)];
-    const transaction = new Transaction({ feePayer: trader, recentBlockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight }).add(...instructions);
+    const instructions = side === "buy" ? buildFairLaunchBuyWithAta(mint, trader, amount, feeReceiver) : [buildFairLaunchSell(mint, trader, amount, feeReceiver)];
+    const transaction = new Transaction().add(...instructions);
+    transaction.feePayer = trader;
+    transaction.recentBlockhash = latest.blockhash;
 
-    return NextResponse.json({
-      transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"),
-      mint: mint.toBase58(),
-      trader: trader.toBase58(),
-      side,
-      amount: amount.toString(),
-      lastValidBlockHeight: latest.lastValidBlockHeight,
-    });
+    return NextResponse.json({ transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"), mint: mint.toBase58(), trader: trader.toBase58(), side, amount: amount.toString(), lastValidBlockHeight: latest.lastValidBlockHeight });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare trade" }, { status: 400 });
   }
