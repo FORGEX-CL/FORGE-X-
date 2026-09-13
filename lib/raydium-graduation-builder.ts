@@ -12,6 +12,8 @@ const STATE_VERSION = 2;
 const STATUS_GRADUATED = 2;
 const STATE_LEN = 82;
 const SPL_TOKEN_ACCOUNT_LEN = 165;
+const SPL_TOKEN_MINT_OFFSET = 0;
+const SPL_TOKEN_OWNER_OFFSET = 32;
 const SPL_TOKEN_AMOUNT_OFFSET = 64;
 
 export type GraduationTransactionInput = {
@@ -50,8 +52,16 @@ function assertOnChainGraduationState(accountData: Buffer, expectedDeveloper: Pu
 }
 
 function readTokenAccountAmount(accountData: Buffer): bigint {
-  if (accountData.length < SPL_TOKEN_ACCOUNT_LEN) throw new Error("Fair Launch vault is not a valid SPL token account");
+  if (accountData.length < SPL_TOKEN_ACCOUNT_LEN) throw new Error("Token account is invalid");
   return readU64(accountData, SPL_TOKEN_AMOUNT_OFFSET);
+}
+
+function assertDeveloperTokenAccount(accountData: Buffer, developer: PublicKey, mint: PublicKey): void {
+  if (accountData.length < SPL_TOKEN_ACCOUNT_LEN) throw new Error("Developer token account is not a valid SPL token account");
+  const accountMint = new PublicKey(accountData.subarray(SPL_TOKEN_MINT_OFFSET, SPL_TOKEN_MINT_OFFSET + 32));
+  const accountOwner = new PublicKey(accountData.subarray(SPL_TOKEN_OWNER_OFFSET, SPL_TOKEN_OWNER_OFFSET + 32));
+  if (!accountMint.equals(mint)) throw new Error("Developer token account is for the wrong mint");
+  if (!accountOwner.equals(developer)) throw new Error("Developer token account is not controlled by the developer wallet");
 }
 
 export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionInput): Promise<PreparedGraduationTransaction> {
@@ -90,6 +100,7 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
   if (!developerTokenInfo || !developerTokenInfo.owner.equals(TOKEN_PROGRAM_ID)) {
     throw new Error("Developer token account must exist before atomic graduation; the Fair Launch first buy normally creates it");
   }
+  assertDeveloperTokenAccount(developerTokenInfo.data, input.developer, input.mint);
 
   const { builder, extInfo } = await raydium.cpmm.createPool({
     programId: cpmmProgramId,
