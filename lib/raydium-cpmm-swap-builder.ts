@@ -35,8 +35,8 @@ function cluster() {
 }
 
 function positiveSlippage(value: number) {
-  if (!Number.isFinite(value) || value < 0.0001 || value > 1) {
-    throw new Error("Slippage must be between 0.01% and 100%");
+  if (!Number.isFinite(value) || value < 0.0001 || value > 0.05) {
+    throw new Error("Slippage must be between 0.01% and 5%");
   }
   return value;
 }
