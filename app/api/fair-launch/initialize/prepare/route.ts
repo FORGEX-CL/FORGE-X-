@@ -23,17 +23,14 @@ export async function POST(request: NextRequest) {
     if (developerAta.amount !== mintInfo.supply) throw new Error("Developer token account does not contain the complete Fair Launch supply");
 
     const latest = await connection.getLatestBlockhash("confirmed");
-    const transaction = new Transaction({ feePayer: developer, recentBlockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight }).add(
+    const transaction = new Transaction().add(
       buildInitializeFairLaunch(mint, developer, FORGE_X_FAIR_LAUNCH.graduation.targetSolLamports),
       ...buildSeedFairLaunchVault(mint, developer),
     );
+    transaction.feePayer = developer;
+    transaction.recentBlockhash = latest.blockhash;
 
-    return NextResponse.json({
-      transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"),
-      mint: mint.toBase58(),
-      developer: developer.toBase58(),
-      lastValidBlockHeight: latest.lastValidBlockHeight,
-    });
+    return NextResponse.json({ transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"), mint: mint.toBase58(), developer: developer.toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare Fair Launch initialization" }, { status: 400 });
   }
