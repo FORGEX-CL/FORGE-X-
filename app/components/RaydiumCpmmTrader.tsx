@@ -11,154 +11,112 @@ const TIMEOUT_MS = 90_000;
 type MintInfo = { address: string; symbol: string | null; decimals: number | null };
 type PoolResponse = { pools?: Array<{ id: string; mintA: string | null; mintB: string | null; symbolA: string | null; symbolB: string | null; decimalsA: number | null; decimalsB: number | null; price: number | null }>; error?: string };
 type Wallet = { publicKey?: { toString(): string } | null; signTransaction?: (tx: VersionedTransaction) => Promise<VersionedTransaction> };
-
 type PreparedSwap = { transaction?: string; recentBlockhash?: string; outputAmount?: string; minimumOutputAmount?: string; tradeFee?: string; outputMint?: string; error?: string };
 
 function wallet(): Wallet { return (window as Window & { solana?: Wallet }).solana || {}; }
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function parseUnits(value: string, decimals: number): bigint {
   const normalized = value.trim();
-  if (!/^\d*(\.\d*)?$/.test(normalized) || !normalized) throw new Error("Enter a valid amount");
-  const [whole = "0", fraction = ""] = normalized.split(".");
-  if (fraction.length > decimals) throw new Error(`Maximum ${decimals} decimals`);
-  return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt((fraction + "0".repeat(decimals)).slice(0, decimals) || "0");
+  if (!/^\d+(\.\d+)?$/.test(normalized)) throw new Error("Enter a valid amount");
+  const [whole, fraction = ""] = normalized.split(".");
+  if (fraction.length > decimals) throw new Error(`Maximum ${decimals} decimal places allowed`);
+  return BigInt(whole) * 10n ** BigInt(decimals) + BigInt((fraction + "0".repeat(decimals)).slice(0, decimals) || "0");
 }
-function formatUnits(value: string | bigint, decimals: number): string {
-  const raw = BigInt(value.toString());
-  const base = 10n ** BigInt(decimals);
-  const whole = raw / base;
-  const fraction = (raw % base).toString().padStart(decimals, "0").replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction.slice(0, 6)}` : whole.toString();
+function formatUnits(raw: string, decimals: number): string {
+  const value = BigInt(raw); const unit = 10n ** BigInt(decimals); const whole = value / unit;
+  const fraction = (value % unit).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+async function waitFor(connection: Connection, signature: string, recentBlockhash: string) {
+  const started = Date.now();
+  while (Date.now() - started < TIMEOUT_MS) {
+    const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+    if (status?.err) throw new Error(`Swap failed: ${JSON.stringify(status.err)}`);
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
+    if (!(await connection.isBlockhashValid(recentBlockhash, "confirmed")).value) throw new Error("Swap transaction expired before confirmation");
+    await sleep(POLL_MS);
+  }
+  throw new Error("Timed out waiting for swap confirmation");
 }
 
 export function RaydiumCpmmTrader() {
-  const [poolId, setPoolId] = useState("");
-  const [pool, setPool] = useState<PoolResponse["pools"][number] | null>(null);
-  const [mint, setMint] = useState<MintInfo | null>(null);
-  const [inputMint, setInputMint] = useState("");
+  const [poolId, setPoolId] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("pool") || "");
+  const [mints, setMints] = useState<MintInfo[]>([]);
+  const [inputMint, setInputMint] = useState(() => typeof window === "undefined" ? WSOL : new URLSearchParams(window.location.search).get("inputMint") || WSOL);
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState("0.5");
-  const [status, setStatus] = useState("Loading verified pool...");
-  const [busy, setBusy] = useState(false);
+  const [quote, setQuote] = useState<{ outputAmount: string; minimumOutputAmount: string; tradeFee: string; outputMint: string } | null>(null);
+  const [status, setStatus] = useState("idle");
   const [signature, setSignature] = useState("");
+  const [error, setError] = useState("");
+  const [loadingPool, setLoadingPool] = useState(false);
+
+  const input = mints.find((mint) => mint.address === inputMint);
+  const output = mints.find((mint) => mint.address !== inputMint);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get("pool") || "";
-    const requestedMint = params.get("inputMint") || "";
-    setPoolId(id);
-    setInputMint(requestedMint);
-    if (!id) {
-      setStatus("Select a verified migrated pool first.");
-      return;
-    }
-    void (async () => {
+    if (!poolId.trim()) return;
+    const timer = setTimeout(async () => {
+      setLoadingPool(true); setError("");
       try {
-        const response = await fetch(`/api/pools/lookup?poolId=${encodeURIComponent(id)}`, { cache: "no-store" });
-        const data = (await response.json()) as PoolResponse;
-        if (!response.ok || !data.pools?.[0]) throw new Error(data.error || "Verified pool lookup failed");
-        const found = data.pools[0];
-        setPool(found);
-        const selected = requestedMint || found.mintA || found.mintB || "";
-        setInputMint(selected);
-        const decimals = selected === found.mintA ? found.decimalsA : found.decimalsB;
-        setMint({ address: selected, symbol: selected === found.mintA ? found.symbolA : found.symbolB, decimals });
-        setStatus("Verified Raydium CPMM pool.");
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Pool lookup failed");
-      }
-    })();
-  }, []);
-
-  function flipMint() {
-    if (!pool) return;
-    const next = inputMint === pool.mintA ? pool.mintB : pool.mintA;
-    if (!next) return;
-    setInputMint(next);
-    setMint({ address: next, symbol: next === pool.mintA ? pool.symbolA : pool.symbolB, decimals: next === pool.mintA ? pool.decimalsA : pool.decimalsB });
-    setAmount("");
-  }
+        const response = await fetch(`/api/pools/lookup?poolId=${encodeURIComponent(poolId.trim())}`);
+        const data = await response.json() as PoolResponse;
+        if (!response.ok || !data.pools?.[0]) throw new Error(data.error || "Unable to verify pool");
+        const pool = data.pools[0];
+        const nextMints: MintInfo[] = [
+          { address: pool.mintA || "", symbol: pool.symbolA, decimals: pool.decimalsA },
+          { address: pool.mintB || "", symbol: pool.symbolB, decimals: pool.decimalsB },
+        ].filter((mint) => mint.address && mint.decimals !== null);
+        if (nextMints.length !== 2) throw new Error("Pool mint metadata is incomplete");
+        setMints(nextMints);
+        setInputMint((current) => nextMints.some((mint) => mint.address === current) ? current : nextMints[0].address);
+      } catch (e) { setMints([]); setError(e instanceof Error ? e.message : "Unable to verify pool"); }
+      finally { setLoadingPool(false); }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [poolId]);
 
   async function swap() {
-    if (!poolId || !mint?.decimals || !inputMint) return;
-    const currentWallet = wallet();
-    const trader = currentWallet.publicKey?.toString();
-    if (!trader || !currentWallet.signTransaction) {
-      setStatus("Connect a wallet that supports transaction signing.");
-      return;
-    }
-    setBusy(true);
-    setSignature("");
+    const w = wallet();
+    if (!w.publicKey || !w.signTransaction) { setError("Connect a Solana wallet first."); return; }
+    if (!poolId.trim() || !input || !output) { setError("Enter a verified Raydium CPMM pool."); return; }
+    if (!amount.trim()) { setError("Enter a swap amount."); return; }
+    setError(""); setSignature(""); setQuote(null); setStatus("preparing");
     try {
-      const inputAmount = parseUnits(amount, mint.decimals);
-      const slip = Number(slippage) / 100;
-      if (!Number.isFinite(slip) || slip < 0.0001 || slip > 1) throw new Error("Slippage must be between 0.01% and 100%");
-      setStatus("Preparing verified Raydium swap...");
-      const preparedResponse = await fetch("/api/raydium/swap/prepare", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ trader, poolId, inputMint, amount: inputAmount.toString(), slippage: slip }),
-      });
-      const prepared = (await preparedResponse.json()) as PreparedSwap;
-      if (!preparedResponse.ok || !prepared.transaction || !prepared.recentBlockhash) throw new Error(prepared.error || "Swap preparation failed");
+      const rawAmount = parseUnits(amount, input.decimals ?? 9);
+      const response = await fetch("/api/raydium/swap/prepare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ poolId: poolId.trim(), trader: w.publicKey.toString(), inputMint, amount: rawAmount.toString(), slippage: Number(slippage) / 100 }) });
+      const data = await response.json() as PreparedSwap;
+      if (!response.ok || !data.transaction || !data.recentBlockhash || !data.outputAmount || !data.outputMint) throw new Error(data.error || "Unable to prepare Raydium swap");
+      setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount || "0", tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
+      setStatus("signing");
+      const signed = await w.signTransaction(VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64")));
+      setStatus("confirming");
       const connection = new Connection(RPC, "confirmed");
-      const valid = await connection.isBlockhashValid(prepared.recentBlockhash, "confirmed");
-      if (!valid.value) throw new Error("Prepared transaction blockhash expired; please retry");
-      const signed = await currentWallet.signTransaction(VersionedTransaction.deserialize(Buffer.from(prepared.transaction, "base64")));
-      setStatus("Submitting transaction...");
-      const tx = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 3 });
-      setSignature(tx);
-      const started = Date.now();
-      while (Date.now() - started < TIMEOUT_MS) {
-        const result = await connection.getSignatureStatuses([tx], { searchTransactionHistory: true });
-        const confirmation = result.value[0];
-        if (confirmation?.err) throw new Error(`Transaction failed: ${JSON.stringify(confirmation.err)}`);
-        if (confirmation?.confirmationStatus === "confirmed" || confirmation?.confirmationStatus === "finalized") {
-          setStatus(`Swap confirmed. Received about ${prepared.outputAmount ? formatUnits(prepared.outputAmount, mint.decimals) : "the quoted output"}.`);
-          return;
-        }
-        await sleep(POLL_MS);
-      }
-      throw new Error("Transaction confirmation timed out; check the signature on Solana before retrying");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Swap failed");
-    } finally {
-      setBusy(false);
-    }
+      const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
+      setSignature(txid);
+      await waitFor(connection, txid, data.recentBlockhash);
+      setStatus("confirmed");
+    } catch (e) { setStatus("failed"); setError(e instanceof Error ? e.message : "Swap failed"); }
   }
 
-  const inputSymbol = mint?.symbol || (inputMint === WSOL ? "SOL" : "TOKEN");
-  const outputMint = pool ? (inputMint === pool.mintA ? pool.mintB : pool.mintA) : null;
-  const outputSymbol = pool ? (inputMint === pool.mintA ? pool.symbolB : pool.symbolA) : null;
+  function flip() {
+    if (output) { setInputMint(output.address); setAmount(""); setQuote(null); }
+  }
 
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Raydium CPMM</p>
-          <h2 className="mt-2 text-xl font-black">Verified swap</h2>
-        </div>
-        <span className="rounded-full border border-[#f5c542]/20 px-3 py-1 text-xs text-white/55">On-chain verified</span>
-      </div>
-      <p className="mt-4 text-sm text-white/50">{status}</p>
-      {pool && mint ? (
-        <div className="mt-6 space-y-4">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-            <div className="text-xs text-white/40">You pay</div>
-            <div className="mt-2 flex gap-3">
-              <input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" inputMode="decimal" className="min-w-0 flex-1 bg-transparent text-2xl font-bold outline-none" />
-              <button type="button" onClick={flipMint} className="rounded-lg border border-white/10 px-3 text-sm font-bold">{inputSymbol} ↕</button>
-            </div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
-            <div className="flex justify-between"><span>Pool</span><span className="font-mono text-xs">{poolId.slice(0, 6)}…{poolId.slice(-6)}</span></div>
-            <div className="mt-2 flex justify-between"><span>Receive</span><span>{outputSymbol || outputMint?.slice(0, 8) || "—"}</span></div>
-            <label className="mt-3 flex items-center justify-between gap-3"><span>Slippage</span><input value={slippage} onChange={(event) => setSlippage(event.target.value)} className="w-20 rounded-md border border-white/10 bg-black/30 px-2 py-1 text-right text-white outline-none" />%</label>
-          </div>
-          <button type="button" disabled={busy || !amount} onClick={() => void swap()} className="w-full rounded-xl bg-[#f5c542] px-4 py-3 font-black text-black disabled:cursor-not-allowed disabled:opacity-40">{busy ? "Processing…" : `Swap ${inputSymbol} → ${outputSymbol || "token"}`}</button>
-          {signature ? <a className="block truncate text-xs text-[#f5c542]" href={`https://explorer.solana.com/tx/${signature}?cluster=${process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet"}`} target="_blank" rel="noreferrer">{signature}</a> : null}
-        </div>
-      ) : null}
-    </div>
-  );
+  const outputDecimals = output?.decimals ?? 9;
+  return <div className="rounded-2xl border border-white/10 bg-white/[.025] p-6">
+    <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Raydium CPMM</p><h3 className="mt-2 text-xl font-black">Trade a migrated pool</h3></div><span className="rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-wider text-white/45">Verified on-chain</span></div>
+    <label className="mt-5 block text-sm text-white/50">Pool ID<input value={poolId} onChange={(e) => setPoolId(e.target.value)} className="forge-input" placeholder="Raydium CPMM pool address" /></label>
+    {loadingPool && <p className="mt-3 text-xs text-white/40">Checking pool account…</p>}
+    {mints.length === 2 && <>
+      <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4"><div className="flex items-center justify-between"><span className="text-xs text-white/40">You pay</span><button onClick={flip} className="rounded-lg border border-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/50">Flip</button></div><div className="mt-2 flex items-center gap-3"><input value={amount} onChange={(e) => setAmount(e.target.value)} className="min-w-0 flex-1 bg-transparent text-2xl font-bold outline-none" inputMode="decimal" placeholder="0.00" /><span className="font-bold">{input?.symbol || (inputMint === WSOL ? "SOL" : "TOKEN")}</span></div></div>
+      <div className="py-2 text-center text-white/20">↓</div>
+      <div className="rounded-xl border border-white/10 bg-black/20 p-4"><span className="text-xs text-white/40">You receive</span><div className="mt-2 flex items-center justify-between gap-3"><span className="text-2xl font-bold text-white/60">{quote ? formatUnits(quote.outputAmount, outputDecimals) : "0.00"}</span><span className="font-bold">{output?.symbol || "TOKEN"}</span></div></div>
+      <label className="mt-4 block text-sm text-white/50">Slippage<input value={slippage} onChange={(e) => setSlippage(e.target.value)} className="forge-input" inputMode="decimal" placeholder="0.5" /><span className="mt-1 block text-[11px] text-white/30">Percent. The server converts this to the Raydium SDK slippage fraction.</span></label>
+      {quote && <div className="mt-4 grid gap-2 rounded-xl border border-white/10 p-4 text-xs text-white/45"><div className="flex justify-between"><span>Minimum received</span><span>{formatUnits(quote.minimumOutputAmount, outputDecimals)} {output?.symbol || "TOKEN"}</span></div><div className="flex justify-between"><span>Pool trade fee</span><span>{formatUnits(quote.tradeFee, input?.decimals ?? 9)} {input?.symbol || "TOKEN"}</span></div></div>}
+      <button onClick={swap} disabled={status === "preparing" || status === "signing" || status === "confirming" || loadingPool} className="mt-5 w-full rounded-xl bg-[#f5c542] py-3 font-bold text-black disabled:opacity-40">{status === "preparing" ? "Preparing…" : status === "signing" ? "Approve in wallet…" : status === "confirming" ? "Confirming…" : status === "confirmed" ? "Swap confirmed ✓" : "Swap on Raydium"}</button>
+    </>}
+    {signature && <a className="mt-3 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${signature}?cluster=${process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "devnet"}`} target="_blank" rel="noreferrer">View transaction</a>}
+    {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+  </div>;
 }
