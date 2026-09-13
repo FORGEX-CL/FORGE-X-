@@ -90,7 +90,7 @@ export function FairLaunchGraduator() {
       setSignature(txid);
       await waitFor(connection, txid);
       setStatus("verifying");
-      const verify = await fetch(`/api/fair-launch/graduate/verify?mint=${encodeURIComponent(mint.trim())}&developer=${encodeURIComponent(wallet.publicKey.toString())}&poolId=${encodeURIComponent(data.poolId)}`);
+      const verify = await fetch(`/api/fair-launch/graduate/verify?mint=${encodeURIComponent(mint.trim())}&developer=${encodeURIComponent(wallet.publicKey.toString())}&poolId=${encodeURIComponent(data.poolId)}&signature=${encodeURIComponent(txid)}`);
       const verifyData = await verify.json() as { verified?: boolean; error?: string };
       if (!verify.ok || !verifyData.verified) throw new Error(verifyData.error || "Graduation transaction confirmed but on-chain verification failed");
       setStatus("complete");
@@ -118,7 +118,7 @@ export function FairLaunchGraduator() {
         <div className="rounded-xl border border-white/10 p-4"><div className="text-xs text-white/35">Token liquidity</div><div className="mt-1 font-bold">{state.virtualTokenReserveBaseUnits ? (Number(state.virtualTokenReserveBaseUnits) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}</div></div>
       </div>}
       <button onClick={graduate} disabled={!canGraduate || ["preparing", "confirming", "verifying", "complete"].includes(status)} className="mt-5 w-full rounded-xl bg-[#f5c542] px-5 py-3 font-bold text-black disabled:opacity-40">
-        {status === "preparing" ? "Preparing atomic graduation…" : status === "awaiting_signature" ? "Approve Raydium graduation in wallet…" : status === "confirming" ? "Confirming graduation…" : status === "verifying" ? "Verifying migrated state + pool…" : status === "complete" ? "Graduation verified ✓" : "Graduate to Raydium CPMM"}
+        {status === "preparing" ? "Preparing atomic graduation…" : status === "awaiting_signature" ? "Approve Raydium graduation in wallet…" : status === "confirming" ? "Confirming graduation…" : status === "verifying" ? "Verifying signed migration + pool…" : status === "complete" ? "Graduation verified ✓" : "Graduate to Raydium CPMM"}
       </button>
       {poolId && <p className="mt-3 break-all text-xs text-white/40">Raydium pool: {poolId}</p>}
       {signature && <a href={explorerTx(signature)} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-[#f5c542]">View graduation transaction</a>}
