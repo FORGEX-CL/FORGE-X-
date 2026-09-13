@@ -6,11 +6,18 @@ import { FORGE_X_FAIR_LAUNCH } from "@/lib/fair-launch-rules";
 
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 
+function key(value: unknown, field: string): PublicKey {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
+  try { return new PublicKey(value); } catch { throw new Error(`${field} is invalid`); }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const mint = new PublicKey(body.mint);
-    const developer = new PublicKey(body.developer);
+    const mint = key(body.mint, "mint");
+    const developer = key(body.developer, "developer");
+    const feeReceiverValue = process.env.FORGE_X_FEE_RECEIVER || process.env.NEXT_PUBLIC_FORGE_X_FEE_RECEIVER;
+    const feeReceiver = key(feeReceiverValue, "FORGE_X_FEE_RECEIVER");
     if (!process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID) throw new Error("FORGE X Fair Launch program ID is not configured");
 
     const connection = new Connection(RPC, "confirmed");
@@ -24,13 +31,13 @@ export async function POST(request: NextRequest) {
 
     const latest = await connection.getLatestBlockhash("confirmed");
     const transaction = new Transaction().add(
-      buildInitializeFairLaunch(mint, developer, FORGE_X_FAIR_LAUNCH.graduation.targetSolLamports),
+      buildInitializeFairLaunch(mint, developer, FORGE_X_FAIR_LAUNCH.graduation.targetSolLamports, feeReceiver),
       ...buildSeedFairLaunchVault(mint, developer),
     );
     transaction.feePayer = developer;
     transaction.recentBlockhash = latest.blockhash;
 
-    return NextResponse.json({ transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"), mint: mint.toBase58(), developer: developer.toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight });
+    return NextResponse.json({ transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"), mint: mint.toBase58(), developer: developer.toBase58(), feeReceiver: feeReceiver.toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare Fair Launch initialization" }, { status: 400 });
   }
