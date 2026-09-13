@@ -8,7 +8,7 @@ const STATE_VERSION = 3;
 const STATUS_MIGRATED = 3;
 
 const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
-const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bYb");
+const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY");
 
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
