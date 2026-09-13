@@ -17,6 +17,14 @@ function key(value: unknown, field: string): PublicKey {
   try { return new PublicKey(value); } catch { throw new Error(`${field} is invalid`); }
 }
 
+function positiveAmount(value: unknown, field: string): string {
+  const amount = value && typeof value === "object" && "toString" in value
+    ? String(value.toString())
+    : String(value ?? "0");
+  if (!/^\d+$/.test(amount) || BigInt(amount) <= 0n) throw new Error(`${field} must be positive`);
+  return amount;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const mint = key(request.nextUrl.searchParams.get("mint"), "mint");
@@ -51,6 +59,12 @@ export async function GET(request: NextRequest) {
     if (![mintA, mintB].includes(WSOL)) throw new Error("Migrated pool must contain WSOL");
     if (mintA !== mint.toBase58() && mintB !== mint.toBase58()) throw new Error("Migrated pool does not contain the Fair Launch mint");
 
+    const vaultAAmount = positiveAmount(rpcPool.rpcData.vaultAAmount, "Raydium vault A balance");
+    const vaultBAmount = positiveAmount(rpcPool.rpcData.vaultBAmount, "Raydium vault B balance");
+    const tokenVaultAmount = mintA === mint.toBase58() ? vaultAAmount : vaultBAmount;
+    const wsolVaultAmount = mintA === WSOL ? vaultAAmount : vaultBAmount;
+    if (BigInt(tokenVaultAmount) <= 0n || BigInt(wsolVaultAmount) <= 0n) throw new Error("Migrated pool does not contain positive token and WSOL liquidity");
+
     return NextResponse.json({
       verified: true,
       cluster: CLUSTER,
@@ -61,6 +75,10 @@ export async function GET(request: NextRequest) {
       poolId: poolId.toBase58(),
       poolProgramId: poolAccount.owner.toBase58(),
       poolMints: [mintA, mintB],
+      liquidity: {
+        tokenBaseUnits: tokenVaultAmount,
+        wsolLamports: wsolVaultAmount,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to verify graduation";
