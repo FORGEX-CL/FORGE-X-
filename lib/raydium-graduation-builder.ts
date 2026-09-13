@@ -8,9 +8,9 @@ import BN from "bn.js";
 import { Raydium, CREATE_CPMM_POOL_FEE_ACC, CREATE_CPMM_POOL_PROGRAM, DEVNET_PROGRAM_ID, TxVersion, getCpmmPdaAmmConfigId } from "@raydium-io/raydium-sdk-v2";
 import { buildMigrateFairLaunchToDeveloper, fairLaunchStatePda, fairLaunchVaultAta } from "./fair-launch-program";
 
-const STATE_VERSION = 2;
+const STATE_VERSION = 3;
 const STATUS_GRADUATED = 2;
-const STATE_LEN = 82;
+const STATE_LEN = 114;
 const SPL_TOKEN_ACCOUNT_LEN = 165;
 const SPL_TOKEN_MINT_OFFSET = 0;
 const SPL_TOKEN_OWNER_OFFSET = 32;
