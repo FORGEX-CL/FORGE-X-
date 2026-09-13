@@ -7,6 +7,7 @@ const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana
 const WSOL = "So11111111111111111111111111111111111111112";
 const POLL_MS = 500;
 const TIMEOUT_MS = 90_000;
+const MAX_SLIPPAGE_PERCENT = 5;
 
 type MintInfo = { address: string; symbol: string | null; decimals: number | null };
 type PoolResponse = { pools?: Array<{ id: string; mintA: string | null; mintB: string | null; symbolA: string | null; symbolB: string | null; decimalsA: number | null; decimalsB: number | null; price: number | null }>; error?: string };
@@ -81,10 +82,14 @@ export function RaydiumCpmmTrader() {
     if (!w.publicKey || !w.signTransaction) { setError("Connect a Solana wallet first."); return; }
     if (!poolId.trim() || !input || !output) { setError("Enter a verified Raydium CPMM pool."); return; }
     if (!amount.trim()) { setError("Enter a swap amount."); return; }
+    const slippagePercent = Number(slippage);
+    if (!Number.isFinite(slippagePercent) || slippagePercent < 0.01 || slippagePercent > MAX_SLIPPAGE_PERCENT) {
+      setError(`Slippage must be between 0.01% and ${MAX_SLIPPAGE_PERCENT}%`); return;
+    }
     setError(""); setSignature(""); setQuote(null); setStatus("preparing");
     try {
       const rawAmount = parseUnits(amount, input.decimals ?? 9);
-      const response = await fetch("/api/raydium/swap/prepare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ poolId: poolId.trim(), trader: w.publicKey.toString(), inputMint, amount: rawAmount.toString(), slippage: Number(slippage) / 100 }) });
+      const response = await fetch("/api/raydium/swap/prepare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ poolId: poolId.trim(), trader: w.publicKey.toString(), inputMint, amount: rawAmount.toString(), slippage: slippagePercent / 100 }) });
       const data = await response.json() as PreparedSwap;
       if (!response.ok || !data.transaction || !data.recentBlockhash || !data.outputAmount || !data.outputMint) throw new Error(data.error || "Unable to prepare Raydium swap");
       setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount || "0", tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
@@ -112,7 +117,7 @@ export function RaydiumCpmmTrader() {
       <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4"><div className="flex items-center justify-between"><span className="text-xs text-white/40">You pay</span><button onClick={flip} className="rounded-lg border border-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/50">Flip</button></div><div className="mt-2 flex items-center gap-3"><input value={amount} onChange={(e) => setAmount(e.target.value)} className="min-w-0 flex-1 bg-transparent text-2xl font-bold outline-none" inputMode="decimal" placeholder="0.00" /><span className="font-bold">{input?.symbol || (inputMint === WSOL ? "SOL" : "TOKEN")}</span></div></div>
       <div className="py-2 text-center text-white/20">↓</div>
       <div className="rounded-xl border border-white/10 bg-black/20 p-4"><span className="text-xs text-white/40">You receive</span><div className="mt-2 flex items-center justify-between gap-3"><span className="text-2xl font-bold text-white/60">{quote ? formatUnits(quote.outputAmount, outputDecimals) : "0.00"}</span><span className="font-bold">{output?.symbol || "TOKEN"}</span></div></div>
-      <label className="mt-4 block text-sm text-white/50">Slippage<input value={slippage} onChange={(e) => setSlippage(e.target.value)} className="forge-input" inputMode="decimal" placeholder="0.5" /><span className="mt-1 block text-[11px] text-white/30">Percent. The server converts this to the Raydium SDK slippage fraction.</span></label>
+      <label className="mt-4 block text-sm text-white/50">Slippage<input value={slippage} onChange={(e) => setSlippage(e.target.value)} className="forge-input" inputMode="decimal" placeholder="0.5" /><span className="mt-1 block text-[11px] text-white/30">Allowed range: 0.01%–5%.</span></label>
       {quote && <div className="mt-4 grid gap-2 rounded-xl border border-white/10 p-4 text-xs text-white/45"><div className="flex justify-between"><span>Minimum received</span><span>{formatUnits(quote.minimumOutputAmount, outputDecimals)} {output?.symbol || "TOKEN"}</span></div><div className="flex justify-between"><span>Pool trade fee</span><span>{formatUnits(quote.tradeFee, input?.decimals ?? 9)} {input?.symbol || "TOKEN"}</span></div></div>}
       <button onClick={swap} disabled={status === "preparing" || status === "signing" || status === "confirming" || loadingPool} className="mt-5 w-full rounded-xl bg-[#f5c542] py-3 font-bold text-black disabled:opacity-40">{status === "preparing" ? "Preparing…" : status === "signing" ? "Approve in wallet…" : status === "confirming" ? "Confirming…" : status === "confirmed" ? "Swap confirmed ✓" : "Swap on Raydium"}</button>
     </>}
