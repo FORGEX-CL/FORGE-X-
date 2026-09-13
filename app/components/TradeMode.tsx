@@ -1,11 +1,11 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { FairLaunchTrader } from "./FairLaunchTrader";
 import { RaydiumCpmmTrader } from "./RaydiumCpmmTrader";
 
 export function TradeMode() {
-  const params = useSearchParams();
-  const pool = params.get("pool");
+  const [pool, setPool] = useState("");
+  useEffect(() => { setPool(new URLSearchParams(window.location.search).get("pool") || ""); }, []);
   return pool ? <RaydiumCpmmTrader /> : <FairLaunchTrader />;
 }
