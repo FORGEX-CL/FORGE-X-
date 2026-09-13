@@ -13,7 +13,7 @@ const steps = [
 const rules = [
   ["Supply", "1,000,000,000"],
   ["Decimals", "9"],
-  ["Developer first buy", "0.5 SOL minimum"],
+  ["Developer first buy", "0.05 SOL minimum"],
   ["Launch fee", "0.02 SOL"],
   ["Trading fee", "0.50%"],
   ["Graduation target", "85 SOL raised"],
