@@ -39,8 +39,9 @@ function readU64(data: Buffer, offset: number): bigint {
   return data.readBigUInt64LE(offset);
 }
 
-function assertOnChainGraduationState(accountData: Buffer, expectedDeveloper: PublicKey, expectedSol: bigint, expectedTokens: bigint): void {
-  if (accountData.length < STATE_LEN || accountData[0] !== STATE_VERSION) throw new Error("Invalid Fair Launch state account");
+function assertOnChainGraduationState(accountData: Buffer, stateOwner: PublicKey, expectedProgram: PublicKey, expectedDeveloper: PublicKey, expectedSol: bigint, expectedTokens: bigint): void {
+  if (!stateOwner.equals(expectedProgram)) throw new Error("Fair Launch state is owned by the wrong program");
+  if (accountData.length !== STATE_LEN || accountData[0] !== STATE_VERSION) throw new Error("Invalid Fair Launch state account");
   const developer = new PublicKey(accountData.subarray(1, 33));
   const status = accountData[33];
   const realSolRaised = readU64(accountData, 42);
@@ -52,16 +53,16 @@ function assertOnChainGraduationState(accountData: Buffer, expectedDeveloper: Pu
 }
 
 function readTokenAccountAmount(accountData: Buffer): bigint {
-  if (accountData.length < SPL_TOKEN_ACCOUNT_LEN) throw new Error("Token account is invalid");
+  if (accountData.length !== SPL_TOKEN_ACCOUNT_LEN) throw new Error("Token account is invalid");
   return readU64(accountData, SPL_TOKEN_AMOUNT_OFFSET);
 }
 
-function assertDeveloperTokenAccount(accountData: Buffer, developer: PublicKey, mint: PublicKey): void {
-  if (accountData.length < SPL_TOKEN_ACCOUNT_LEN) throw new Error("Developer token account is not a valid SPL token account");
+function assertTokenAccount(accountData: Buffer, expectedMint: PublicKey, expectedOwner: PublicKey, label: string): void {
+  if (accountData.length !== SPL_TOKEN_ACCOUNT_LEN) throw new Error(`${label} is not a valid SPL token account`);
   const accountMint = new PublicKey(accountData.subarray(SPL_TOKEN_MINT_OFFSET, SPL_TOKEN_MINT_OFFSET + 32));
   const accountOwner = new PublicKey(accountData.subarray(SPL_TOKEN_OWNER_OFFSET, SPL_TOKEN_OWNER_OFFSET + 32));
-  if (!accountMint.equals(mint)) throw new Error("Developer token account is for the wrong mint");
-  if (!accountOwner.equals(developer)) throw new Error("Developer token account is not controlled by the developer wallet");
+  if (!accountMint.equals(expectedMint)) throw new Error(`${label} is for the wrong mint`);
+  if (!accountOwner.equals(expectedOwner)) throw new Error(`${label} is controlled by the wrong owner`);
 }
 
 export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionInput): Promise<PreparedGraduationTransaction> {
@@ -75,10 +76,11 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
   const vault = fairLaunchVaultAta(input.mint, programId);
   const stateInfo = await input.connection.getAccountInfo(state, "confirmed");
   if (!stateInfo) throw new Error("Fair Launch state account was not found");
-  assertOnChainGraduationState(stateInfo.data, input.developer, input.solLamports, input.tokenBaseUnits);
+  assertOnChainGraduationState(stateInfo.data, stateInfo.owner, programId, input.developer, input.solLamports, input.tokenBaseUnits);
 
   const vaultInfo = await input.connection.getAccountInfo(vault, "confirmed");
   if (!vaultInfo || !vaultInfo.owner.equals(TOKEN_PROGRAM_ID)) throw new Error("Fair Launch token vault is missing or owned by the wrong token program");
+  assertTokenAccount(vaultInfo.data, input.mint, state, "Fair Launch token vault");
   const actualVaultAmount = readTokenAccountAmount(vaultInfo.data);
   if (actualVaultAmount !== input.tokenBaseUnits) throw new Error("Graduation token amount does not match the actual Fair Launch vault balance");
 
@@ -100,7 +102,7 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
   if (!developerTokenInfo || !developerTokenInfo.owner.equals(TOKEN_PROGRAM_ID)) {
     throw new Error("Developer token account must exist before atomic graduation; the Fair Launch first buy normally creates it");
   }
-  assertDeveloperTokenAccount(developerTokenInfo.data, input.developer, input.mint);
+  assertTokenAccount(developerTokenInfo.data, input.mint, input.developer, "Developer token account");
 
   const { builder, extInfo } = await raydium.cpmm.createPool({
     programId: cpmmProgramId,
