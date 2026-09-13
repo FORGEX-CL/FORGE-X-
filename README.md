@@ -67,6 +67,21 @@ The migration design is atomic:
 
 This avoids moving the reserves through an untrusted server or custodian.
 
+### Post-migration trading
+
+Migrated pools use a separate Raydium CPMM execution path; Fair Launch curve instructions are never sent to arbitrary external pools.
+
+Before a migrated-pool swap, FORGE X:
+
+- verifies the pool account is owned by the expected Raydium CPMM program for the active cluster;
+- verifies the selected token belongs to that pool and reads current pool reserves from Raydium/RPC;
+- calculates the expected output and minimum output using the current Raydium CPMM curve calculation;
+- prepares the official Raydium CPMM swap transaction for the connected wallet;
+- lets the wallet sign the transaction; and
+- polls the actual Solana signature status and blockhash validity before reporting success.
+
+Verified pools in the Pools page can open the same execution path from a **Trade** action. Devnet pool discovery uses Raydium RPC because Raydium's API can lag behind newly-created pools; mainnet pool discovery can use the Raydium API plus on-chain verification.
+
 ## Current verification model
 
 The application verifies important facts against Solana RPC rather than treating UI state as proof:
@@ -76,10 +91,9 @@ The application verifies important facts against Solana RPC rather than treating
 - Graduation reserve amounts
 - Fair Launch token-vault ownership and balances
 - Raydium pool account ownership
+- Raydium pool mint membership
 - Wallet-signed transaction confirmation
-- Transaction errors and expiration
-
-New Raydium devnet pools should be checked through RPC because Raydium's API can lag behind newly-created pools.
+- Transaction errors and blockhash expiry
 
 ## Environment
 
@@ -125,7 +139,7 @@ FORGE X must not be presented as mainnet-ready until all of the following are co
 2. Web lint/build are green in CI.
 3. The Fair Launch program is deployed to the intended Solana cluster and its program ID is configured.
 4. A real Devnet end-to-end launch is completed with a funded test wallet.
-5. Developer first buy, curve buy/sell, graduation, atomic Raydium CPMM creation, and post-migration verification are all exercised on-chain.
+5. Developer first buy, curve buy/sell, graduation, atomic Raydium CPMM creation, post-migration Raydium swap, and post-migration verification are all exercised on-chain.
 6. Metadata upload and immutable metadata verification are exercised with real storage.
 7. The on-chain program and migration path receive an independent security review before mainnet.
 
