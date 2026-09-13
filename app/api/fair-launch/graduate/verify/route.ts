@@ -8,7 +8,7 @@ const STATE_VERSION = 3;
 const STATUS_MIGRATED = 3;
 
 const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
-const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpYb");
+const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bYb");
 
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     const [state] = PublicKey.findProgramAddressSync([Buffer.from("launch"), mint.toBuffer()], programId);
     const stateInfo = await connection.getAccountInfo(state, "confirmed");
-    if (!stateInfo || stateInfo.data.length < STATE_LEN || !stateInfo.owner.equals(programId)) throw new Error("Fair Launch state is missing or owned by the wrong program");
+    if (!stateInfo || stateInfo.data.length !== STATE_LEN || !stateInfo.owner.equals(programId)) throw new Error("Fair Launch state is missing, has an invalid layout, or is owned by the wrong program");
     const data = stateInfo.data;
     if (data[0] !== STATE_VERSION) throw new Error("Unsupported Fair Launch state version");
     const stateDeveloper = new PublicKey(data.subarray(1, 33));
