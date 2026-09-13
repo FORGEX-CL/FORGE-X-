@@ -13,7 +13,7 @@ const MAX_SLIPPAGE_PERCENT = 5;
 type MintInfo = { address: string; symbol: string | null; decimals: number | null };
 type PoolResponse = { pools?: Array<{ id: string; mintA: string | null; mintB: string | null; symbolA: string | null; symbolB: string | null; decimalsA: number | null; decimalsB: number | null; price: number | null }>; error?: string };
 type Wallet = { publicKey?: { toString(): string } | null; signTransaction?: (tx: VersionedTransaction) => Promise<VersionedTransaction> };
-type PreparedSwap = { transaction?: string; recentBlockhash?: string; outputAmount?: string; minimumOutputAmount?: string; tradeFee?: string; outputMint?: string; error?: string };
+type PreparedSwap = { transaction?: string; recentBlockhash?: string; lastValidBlockHeight?: number; outputAmount?: string; minimumOutputAmount?: string; tradeFee?: string; outputMint?: string; error?: string };
 
 function wallet(): Wallet { return (window as Window & { solana?: Wallet }).solana || {}; }
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
@@ -29,13 +29,14 @@ function formatUnits(raw: string, decimals: number): string {
   const fraction = (value % unit).toString().padStart(decimals, "0").replace(/0+$/, "");
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
-async function waitFor(connection: Connection, signature: string, recentBlockhash: string) {
+async function waitFor(connection: Connection, signature: string, lastValidBlockHeight: number) {
   const started = Date.now();
   while (Date.now() - started < TIMEOUT_MS) {
     const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
     if (status?.err) throw new Error(`Swap failed: ${JSON.stringify(status.err)}`);
     if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
-    if (!(await connection.isBlockhashValid(recentBlockhash, { commitment: "confirmed" })).value) throw new Error("Swap transaction expired before confirmation");
+    const blockHeight = await connection.getBlockHeight("confirmed");
+    if (blockHeight > lastValidBlockHeight) throw new Error("Swap transaction expired before confirmation");
     await sleep(POLL_MS);
   }
   throw new Error("Timed out waiting for swap confirmation");
@@ -93,7 +94,7 @@ export function RaydiumCpmmTrader() {
       const rawAmount = parseUnits(amount, input.decimals ?? 9);
       const response = await fetch("/api/raydium/swap/prepare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ poolId: poolId.trim(), trader: w.publicKey.toString(), inputMint, amount: rawAmount.toString(), slippage: slippagePercent / 100 }) });
       const data = await response.json() as PreparedSwap;
-      if (!response.ok || !data.transaction || !data.recentBlockhash || !data.outputAmount || !data.outputMint) throw new Error(data.error || "Unable to prepare Raydium swap");
+      if (!response.ok || !data.transaction || !data.recentBlockhash || typeof data.lastValidBlockHeight !== "number" || !data.outputAmount || !data.outputMint) throw new Error(data.error || "Unable to prepare Raydium swap");
       setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount || "0", tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
       setStatus("signing");
       const signed = await w.signTransaction(VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64")));
@@ -101,7 +102,7 @@ export function RaydiumCpmmTrader() {
       const connection = new Connection(RPC, "confirmed");
       const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
       setSignature(txid);
-      await waitFor(connection, txid, data.recentBlockhash);
+      await waitFor(connection, txid, data.lastValidBlockHeight);
       setStatus("confirmed");
     } catch (e) { setStatus("failed"); setError(e instanceof Error ? e.message : "Swap failed"); }
   }
