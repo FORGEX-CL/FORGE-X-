@@ -92,6 +92,47 @@ fn state_layout_and_version_are_explicit() {
 }
 
 #[test]
+fn state_pack_rejects_short_account_data() {
+    let state = State {
+        developer: Pubkey::new_unique(),
+        status: STATUS_LIVE,
+        developer_bought_lamports: 0,
+        real_sol_raised: 0,
+        virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE,
+        virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS,
+        graduation_sol: 85_000_000_000,
+        created_at: 0,
+        fee_receiver: Pubkey::new_unique(),
+    };
+    let mut bytes = vec![0u8; State::LEN - 1];
+    assert!(state.pack(&mut bytes).is_err());
+}
+
+#[test]
+fn state_unpack_rejects_short_account_data() {
+    let bytes = vec![0u8; State::LEN - 1];
+    assert!(State::unpack(&bytes).is_err());
+}
+
+#[test]
+fn state_unpack_accepts_only_the_defined_prefix() {
+    let state = State {
+        developer: Pubkey::new_unique(),
+        status: STATUS_LIVE,
+        developer_bought_lamports: 50_000_000,
+        real_sol_raised: 1_000_000,
+        virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE + 1_000_000,
+        virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS - 1_000_000,
+        graduation_sol: 85_000_000_000,
+        created_at: 1_750_000_000,
+        fee_receiver: Pubkey::new_unique(),
+    };
+    let mut bytes = vec![0u8; State::LEN + 16];
+    state.pack(&mut bytes).expect("pack state prefix");
+    assert!(State::unpack(&bytes).is_ok());
+}
+
+#[test]
 fn migrated_status_is_terminal() {
     assert_ne!(STATUS_MIGRATED, STATUS_LIVE);
     assert_ne!(STATUS_MIGRATED, STATUS_GRADUATED);
