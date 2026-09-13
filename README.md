@@ -29,7 +29,7 @@ Protocol invariants:
 - Freeze authority: **revoked**
 - Metadata update authority: **revoked and metadata immutable**
 - Developer first buy: **required**
-- Minimum developer first buy: **0.5 SOL**
+- Minimum developer first buy: **0.05 SOL**
 - Trading fee: **0.50% (50 bps)**
 - Initial virtual SOL reserve: **30 SOL**
 - Graduation target: **85 SOL**
@@ -47,7 +47,7 @@ The launch flow is:
 3. Confirm that transaction on Solana.
 4. Prepare and sign a second transaction that initializes the Fair Launch PDA and moves the full supply into its vault.
 5. Confirm initialization.
-6. Prepare and sign the required **0.5 SOL minimum developer first buy**.
+6. Prepare and sign the required **0.05 SOL minimum developer first buy**.
 7. Only after that confirmation does public curve trading open.
 
 Every step is real wallet signing plus on-chain confirmation; UI state is never treated as proof.
