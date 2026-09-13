@@ -28,6 +28,7 @@ export type PreparedRaydiumCpmmSwap = {
   minimumOutputAmount: bigint;
   tradeFee: bigint;
   programId: PublicKey;
+  lastValidBlockHeight: number;
 };
 
 function cluster() {
@@ -121,6 +122,12 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
     txVersion: TxVersion.V0,
   });
 
+  // Raydium builds a valid transaction, but the user may spend time in the wallet UI.
+  // Refresh the blockhash immediately before the transaction leaves the server so the
+  // signing window starts with a fresh lifetime and the client can track exact expiry.
+  const latest = await input.connection.getLatestBlockhash("confirmed");
+  transaction.message.recentBlockhash = latest.blockhash;
+
   return {
     transaction,
     poolId: input.poolId,
@@ -131,5 +138,6 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
     minimumOutputAmount,
     tradeFee,
     programId: expectedProgram,
+    lastValidBlockHeight: latest.lastValidBlockHeight,
   };
 }
