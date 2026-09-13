@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       transaction: Buffer.from(prepared.transaction.serialize()).toString("base64"),
       recentBlockhash: prepared.transaction.message.recentBlockhash,
+      lastValidBlockHeight: prepared.lastValidBlockHeight,
       poolId: prepared.poolId.toBase58(),
       inputMint: prepared.inputMint.toBase58(),
       outputMint: prepared.outputMint.toBase58(),
