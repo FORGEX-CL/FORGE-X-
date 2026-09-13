@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Connection, VersionedTransaction } from "@solana/web3.js";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet";
@@ -49,9 +50,12 @@ async function waitFor(connection: Connection, signature: string, lastValidBlock
 }
 
 export function RaydiumCpmmTrader() {
-  const [poolId, setPoolId] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("pool") || "");
+  const searchParams = useSearchParams();
+  const queryPool = searchParams.get("pool") || "";
+  const queryInputMint = searchParams.get("inputMint") || WSOL;
+  const [poolId, setPoolId] = useState(queryPool);
   const [mints, setMints] = useState<MintInfo[]>([]);
-  const [inputMint, setInputMint] = useState(() => typeof window === "undefined" ? WSOL : new URLSearchParams(window.location.search).get("inputMint") || WSOL);
+  const [inputMint, setInputMint] = useState(queryInputMint);
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState("0.5");
   const [quote, setQuote] = useState<{ outputAmount: string; minimumOutputAmount: string; tradeFee: string; outputMint: string } | null>(null);
@@ -59,6 +63,17 @@ export function RaydiumCpmmTrader() {
   const [signature, setSignature] = useState("");
   const [error, setError] = useState("");
   const [loadingPool, setLoadingPool] = useState(false);
+
+  useEffect(() => {
+    setPoolId(queryPool);
+    setInputMint(queryInputMint);
+    setMints([]);
+    setQuote(null);
+    setSignature("");
+    setError("");
+    setStatus("idle");
+    setAmount("");
+  }, [queryPool, queryInputMint]);
 
   const input = mints.find((mint) => mint.address === inputMint);
   const output = mints.find((mint) => mint.address !== inputMint);
@@ -105,26 +120,16 @@ export function RaydiumCpmmTrader() {
       setStatus("signing");
 
       const transaction = VersionedTransaction.deserialize(decodeBase64(data.transaction));
-      if (transaction.message.recentBlockhash !== data.recentBlockhash) {
-        throw new Error("Prepared swap blockhash mismatch. Please try again.");
-      }
+      if (transaction.message.recentBlockhash !== data.recentBlockhash) throw new Error("Prepared swap blockhash mismatch. Please try again.");
       const payer = transaction.message.staticAccountKeys[0]?.toBase58();
-      if (payer !== w.publicKey.toString()) {
-        throw new Error("Prepared swap wallet does not match the connected wallet.");
-      }
+      if (payer !== w.publicKey.toString()) throw new Error("Prepared swap wallet does not match the connected wallet.");
 
       const connection = new Connection(RPC, "confirmed");
-      // Wallet approval can take long enough for a blockhash to expire. Never ask the
-      // RPC node to accept an already-expired signed transaction.
       const blockHeightBeforeSigning = await connection.getBlockHeight("confirmed");
-      if (blockHeightBeforeSigning > data.lastValidBlockHeight) {
-        throw new Error("Swap transaction expired before wallet approval. Please try again.");
-      }
+      if (blockHeightBeforeSigning > data.lastValidBlockHeight) throw new Error("Swap transaction expired before wallet approval. Please try again.");
       const signed = await w.signTransaction(transaction);
       const blockHeightAfterSigning = await connection.getBlockHeight("confirmed");
-      if (blockHeightAfterSigning > data.lastValidBlockHeight) {
-        throw new Error("Swap transaction expired while waiting for wallet approval. Please try again.");
-      }
+      if (blockHeightAfterSigning > data.lastValidBlockHeight) throw new Error("Swap transaction expired while waiting for wallet approval. Please try again.");
       setStatus("confirming");
       const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 5 });
       setSignature(txid);
