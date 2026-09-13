@@ -124,6 +124,15 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
   const rebuilt = await builder.versionBuild({ txVersion: TxVersion.V0, extInfo, lookupTableAddress: builder.AllTxData.lookupTableAddress });
   if (!(rebuilt.transaction instanceof VersionedTransaction)) throw new Error("Raydium CPMM graduation did not produce a versioned transaction");
 
+  const simulation = await input.connection.simulateTransaction(rebuilt.transaction, {
+    sigVerify: false,
+    replaceRecentBlockhash: true,
+  });
+  if (simulation.value.err) {
+    const logs = simulation.value.logs?.filter(Boolean).slice(-8).join(" | ");
+    throw new Error(`Graduation transaction simulation failed${logs ? `: ${logs}` : ""}`);
+  }
+
   return {
     transaction: rebuilt.transaction,
     poolId: extInfo.address.poolId,
