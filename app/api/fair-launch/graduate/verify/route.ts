@@ -3,8 +3,8 @@ import { Connection, PublicKey } from "@solana/web3.js";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
-const STATE_LEN = 82;
-const STATE_VERSION = 2;
+const STATE_LEN = 114;
+const STATE_VERSION = 3;
 const STATUS_MIGRATED = 3;
 
 const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
