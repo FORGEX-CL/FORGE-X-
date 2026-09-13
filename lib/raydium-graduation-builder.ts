@@ -68,16 +68,26 @@ function assertTokenAccount(accountData: Buffer, expectedMint: PublicKey, expect
   if (!accountOwner.equals(expectedOwner)) throw new Error(`${label} is controlled by the wrong owner`);
 }
 
-function readCreateAccountWithSeed(data: Buffer): { lamports: bigint; space: bigint; owner: PublicKey; seed: string } | null {
-  if (data.length < 4 + 8 + 8 + 32 + 4) return null;
+function readCreateAccountWithSeed(data: Buffer): { base: PublicKey; lamports: bigint; space: bigint; owner: PublicKey; seed: string } | null {
+  if (data.length < 4 + 32 + 4 + 8 + 8 + 32) return null;
   if (data.readUInt32LE(0) !== SYSTEM_CREATE_ACCOUNT_WITH_SEED) return null;
-  const lamports = data.readBigUInt64LE(4);
-  const space = data.readBigUInt64LE(12);
-  const owner = new PublicKey(data.subarray(20, 52));
-  const seedLength = data.readUInt32LE(52);
-  const end = 56 + seedLength;
-  if (end !== data.length) return null;
-  return { lamports, space, owner, seed: data.subarray(56, end).toString("utf8") };
+
+  const base = new PublicKey(data.subarray(4, 36));
+  const seedLength = data.readUInt32LE(36);
+  const seedStart = 40;
+  const seedEnd = seedStart + seedLength;
+  const lamportsOffset = seedEnd;
+  const spaceOffset = lamportsOffset + 8;
+  const ownerOffset = spaceOffset + 8;
+  if (seedLength > 32 || ownerOffset + 32 !== data.length) return null;
+
+  return {
+    base,
+    seed: data.subarray(seedStart, seedEnd).toString("utf8"),
+    lamports: data.readBigUInt64LE(lamportsOffset),
+    space: data.readBigUInt64LE(spaceOffset),
+    owner: new PublicKey(data.subarray(ownerOffset, ownerOffset + 32)),
+  };
 }
 
 async function assertDeveloperFundedWsolSource(
@@ -92,6 +102,8 @@ async function assertDeveloperFundedWsolSource(
     if (index >= createPoolIndex || !ix.programId.equals(SystemProgram.programId)) return false;
     const parsed = readCreateAccountWithSeed(Buffer.from(ix.data));
     return !!parsed
+      && parsed.base.equals(developer)
+      && parsed.owner.equals(TOKEN_PROGRAM_ID)
       && ix.keys[0]?.pubkey.equals(developer)
       && ix.keys[0]?.isSigner
       && ix.keys[0]?.isWritable
@@ -107,6 +119,9 @@ async function assertDeveloperFundedWsolSource(
   if (!parsed) throw new Error("Invalid WSOL funding instruction");
   if (!parsed.owner.equals(TOKEN_PROGRAM_ID)) throw new Error("Graduation WSOL source is not owned by the SPL Token program");
   if (parsed.space !== BigInt(SPL_TOKEN_ACCOUNT_LEN)) throw new Error("Graduation WSOL source has an invalid token-account size");
+  if (!(await PublicKey.createWithSeed(parsed.base, parsed.seed, parsed.owner)).equals(wsolUserVault)) {
+    throw new Error("Graduation WSOL source is not the canonical developer-derived account");
+  }
 
   const rent = await connection.getMinimumBalanceForRentExemption(SPL_TOKEN_ACCOUNT_LEN, "confirmed");
   const expectedCreatedLamports = expectedSolLamports + BigInt(rent);
