@@ -3,8 +3,9 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { prepareRaydiumCpmmSwap } from "@/lib/raydium-cpmm-swap-builder";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet";
-const DEFAULT_RPC = CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "";
-const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || DEFAULT_RPC;
+const RPC = CLUSTER === "mainnet-beta"
+  ? process.env.SOLANA_RPC_URL || ""
+  : process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
