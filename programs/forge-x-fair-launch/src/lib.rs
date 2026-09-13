@@ -220,6 +220,8 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     let state_account = next_account_info(it)?; let mint = next_account_info(it)?; let developer = next_account_info(it)?; let token_vault = next_account_info(it)?; let destination_token = next_account_info(it)?; let system = next_account_info(it)?; let token_program = next_account_info(it)?;
     if !state_account.is_writable || !developer.is_signer || !developer.is_writable || !token_vault.is_writable || !destination_token.is_writable || !system_program::check_id(system.key) || token_program.key != &spl_token::id() { return Err(ProgramError::InvalidArgument); }
     if mint.owner != &spl_token::id() || token_vault.owner != &spl_token::id() || destination_token.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
+    if state_account.data_len() != State::LEN { return Err(ProgramError::InvalidAccountData); }
+    if token_vault.data_len() != TokenAccount::LEN || destination_token.data_len() != TokenAccount::LEN { return Err(ProgramError::InvalidAccountData); }
     let (expected_state, bump) = Pubkey::find_program_address(&[STATE_SEED, mint.key.as_ref()], program_id);
     if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
