@@ -15,6 +15,7 @@ const SPL_TOKEN_ACCOUNT_LEN = 165;
 const SPL_TOKEN_MINT_OFFSET = 0;
 const SPL_TOKEN_OWNER_OFFSET = 32;
 const SPL_TOKEN_AMOUNT_OFFSET = 64;
+const CPMM_CREATE_POOL_DISCRIMINATOR = Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]);
 
 export type GraduationTransactionInput = {
   connection: Connection;
@@ -63,6 +64,53 @@ function assertTokenAccount(accountData: Buffer, expectedMint: PublicKey, expect
   const accountOwner = new PublicKey(accountData.subarray(SPL_TOKEN_OWNER_OFFSET, SPL_TOKEN_OWNER_OFFSET + 32));
   if (!accountMint.equals(expectedMint)) throw new Error(`${label} is for the wrong mint`);
   if (!accountOwner.equals(expectedOwner)) throw new Error(`${label} is controlled by the wrong owner`);
+}
+
+function assertRaydiumCreatePoolInstruction(
+  transaction: VersionedTransaction,
+  cpmmProgramId: PublicKey,
+  poolId: PublicKey,
+  developer: PublicKey,
+  developerTokenAccount: PublicKey,
+  mint: PublicKey,
+  tokenBaseUnits: bigint,
+  solLamports: bigint,
+): void {
+  const instructions = transaction.message.compiledInstructions;
+  const matching = instructions.filter((ix) => {
+    const programId = transaction.message.staticAccountKeys[ix.programIdIndex];
+    if (!programId || !programId.equals(cpmmProgramId)) return false;
+    const keys = ix.accountKeyIndexes.map((index) => transaction.message.staticAccountKeys[index]);
+    return keys.some((key) => key?.equals(poolId));
+  });
+
+  if (matching.length !== 1) throw new Error("Graduation transaction must contain exactly one Raydium CPMM pool-creation instruction");
+
+  const instruction = matching[0];
+  const keys = instruction.accountKeyIndexes.map((index) => transaction.message.staticAccountKeys[index]);
+  const data = Buffer.from(instruction.data);
+  if (data.length !== 32 || !data.subarray(0, 8).equals(CPMM_CREATE_POOL_DISCRIMINATOR)) {
+    throw new Error("Graduation transaction contains an unexpected Raydium CPMM instruction");
+  }
+  if (!keys[0]?.equals(developer) || !keys[0]) throw new Error("Raydium pool creator is not the graduation developer");
+  if (!keys[3]?.equals(poolId)) throw new Error("Raydium pool ID is not bound to the verified graduation pool");
+
+  const mintA = keys[4];
+  const mintB = keys[5];
+  const userVaultA = keys[7];
+  const userVaultB = keys[8];
+  if (!mintA || !mintB || !userVaultA || !userVaultB) throw new Error("Raydium CPMM pool instruction is missing required accounts");
+  if (!(mintA.equals(mint) || mintB.equals(mint))) throw new Error("Raydium pool instruction does not contain the graduation mint");
+
+  const tokenIsA = mintA.equals(mint);
+  const tokenUserVault = tokenIsA ? userVaultA : userVaultB;
+  if (!tokenUserVault.equals(developerTokenAccount)) throw new Error("Raydium CPMM is not sourcing the graduation token from the developer ATA");
+
+  const amountA = readU64(data, 8);
+  const amountB = readU64(data, 16);
+  const expectedA = tokenIsA ? tokenBaseUnits : solLamports;
+  const expectedB = tokenIsA ? solLamports : tokenBaseUnits;
+  if (amountA !== expectedA || amountB !== expectedB) throw new Error("Raydium CPMM liquidity amounts do not match the verified graduation amounts");
 }
 
 export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionInput): Promise<PreparedGraduationTransaction> {
@@ -125,6 +173,17 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
 
   const rebuilt = await builder.versionBuild({ txVersion: TxVersion.V0, extInfo, lookupTableAddress: builder.AllTxData.lookupTableAddress });
   if (!(rebuilt.transaction instanceof VersionedTransaction)) throw new Error("Raydium CPMM graduation did not produce a versioned transaction");
+
+  assertRaydiumCreatePoolInstruction(
+    rebuilt.transaction,
+    cpmmProgramId,
+    extInfo.address.poolId,
+    input.developer,
+    developerTokenAccount,
+    input.mint,
+    input.tokenBaseUnits,
+    input.solLamports,
+  );
 
   const simulation = await input.connection.simulateTransaction(rebuilt.transaction, {
     sigVerify: false,
