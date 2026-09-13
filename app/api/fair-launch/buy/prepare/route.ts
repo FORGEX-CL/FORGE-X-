@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const feeReceiver = key(feeReceiverValue, "FORGE_X_FEE_RECEIVER");
     const grossLamports = BigInt(String(body.grossLamports || FORGE_X_FAIR_LAUNCH.developerMinimumBuyLamports));
     if (grossLamports < FORGE_X_FAIR_LAUNCH.developerMinimumBuyLamports) {
-      throw new Error("Developer first buy must be at least 0.5 SOL");
+      throw new Error("Developer first buy must be at least 0.05 SOL");
     }
 
     const connection = new Connection(RPC, "confirmed");
