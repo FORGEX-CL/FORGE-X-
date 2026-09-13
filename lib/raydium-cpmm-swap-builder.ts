@@ -59,7 +59,7 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
 
   if (network === "mainnet") {
     const response = await raydium.api.fetchPoolById({ ids: input.poolId.toBase58() });
-    const candidate = response.data?.[0];
+    const candidate = response[0];
     if (!candidate || candidate.programId !== expectedProgram.toBase58()) {
       throw new Error("Pool is not a verified Raydium CPMM pool");
     }
@@ -90,14 +90,16 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
   const outputMint = baseIn ? mintB : mintA;
   const inputReserve = baseIn ? rpcData.baseReserve : rpcData.quoteReserve;
   const outputReserve = baseIn ? rpcData.quoteReserve : rpcData.baseReserve;
+  const config = rpcData.configInfo;
+  const zero = new BN(0);
   const swapResult = CurveCalculator.swapBaseInput(
     new BN(input.inputAmount.toString()),
     inputReserve,
     outputReserve,
-    rpcData.configInfo?.tradeFeeRate ?? 0,
-    rpcData.configInfo?.creatorFeeRate ?? 0,
-    rpcData.configInfo?.protocolFeeRate ?? 0,
-    rpcData.configInfo?.fundFeeRate ?? 0,
+    config?.tradeFeeRate ?? zero,
+    config?.creatorFeeRate ?? zero,
+    config?.protocolFeeRate ?? zero,
+    config?.fundFeeRate ?? zero,
     rpcData.feeOn === FeeOn.BothToken || rpcData.feeOn === FeeOn.OnlyTokenB,
   );
 
