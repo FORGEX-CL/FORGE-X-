@@ -12,7 +12,7 @@ type Risk = {
 
 type Pair = {
   pairAddress?: string;
-  baseToken?: { name?: string; symbol?: string };
+  baseToken?: { address?: string; name?: string; symbol?: string };
   quoteToken?: { symbol?: string };
   priceUsd?: string;
   priceChange?: { h24?: number };
@@ -66,15 +66,17 @@ export default function Market() {
       {error && <Card className="mb-6 border-red-400/20"><p className="text-sm text-red-300">{error}</p></Card>}
 
       <Card>
-        <div className="hidden grid-cols-6 gap-4 border-b border-white/10 px-2 pb-4 text-xs uppercase tracking-wider text-white/35 md:grid"><span>Pair</span><span>Price</span><span>24h</span><span>Volume</span><span>Liquidity</span><span>DEX</span></div>
+        <div className="hidden grid-cols-7 gap-4 border-b border-white/10 px-2 pb-4 text-xs uppercase tracking-wider text-white/35 md:grid"><span>Pair</span><span>Price</span><span>24h</span><span>Volume</span><span>Liquidity</span><span>DEX</span><span>Action</span></div>
         {pairs.length === 0 && !loading ? <div className="py-16 text-center text-sm text-white/40">Search for a token to load live Solana markets.</div> : pairs.map((pair) => {
           const change = pair.priceChange?.h24 ?? 0;
           const risk = pair.forgeRisk;
-          return <div key={`${pair.pairAddress}-${pair.dexId}`} className="grid gap-2 border-b border-white/5 px-2 py-5 text-sm last:border-0 md:grid-cols-6 md:gap-4 md:items-center">
+          const mint = pair.baseToken?.address;
+          const blocked = risk?.hold || risk?.level === "CRITICAL";
+          return <div key={`${pair.pairAddress}-${pair.dexId}`} className="grid gap-3 border-b border-white/5 px-2 py-5 text-sm last:border-0 md:grid-cols-7 md:gap-4 md:items-center">
             <div>
               <div className="font-semibold">{pair.baseToken?.symbol ?? "Unknown"}/{pair.quoteToken?.symbol ?? "—"}</div>
               <div className="text-xs text-white/35">{pair.baseToken?.name ?? ""}</div>
-              <div className={`mt-1 text-[10px] font-bold uppercase tracking-wider ${risk?.hold || risk?.level === "CRITICAL" ? "text-red-300" : risk?.impersonation || risk?.level === "HIGH" ? "text-amber-300" : "text-emerald-300"}`}>
+              <div className={`mt-1 text-[10px] font-bold uppercase tracking-wider ${blocked ? "text-red-300" : risk?.impersonation || risk?.level === "HIGH" ? "text-amber-300" : "text-emerald-300"}`}>
                 {riskLabel(risk)}{risk?.score != null ? ` · ${risk.score}/100` : ""}
               </div>
             </div>
@@ -83,6 +85,7 @@ export default function Market() {
             <span className="text-white/50">{money(pair.volume?.h24)}</span>
             <span className="text-white/50">{money(pair.liquidity?.usd)}</span>
             <span className="text-white/50">{pair.dexId ?? "—"}</span>
+            {mint && !blocked ? <a href={`/trade?mint=${encodeURIComponent(mint)}`} className="inline-flex w-fit rounded-lg border border-[#f5c542]/30 px-3 py-2 text-xs font-bold text-[#f5c542] hover:bg-[#f5c542]/10">Open trade</a> : <span className="text-xs text-white/25">Trading blocked</span>}
           </div>;
         })}
       </Card>
