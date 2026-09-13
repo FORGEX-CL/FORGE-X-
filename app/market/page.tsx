@@ -126,13 +126,18 @@ export default function Market() {
               const migrated =
                 pair.forgeStatus === "MIGRATED" ||
                 pair.forgeStatus === "GRADUATED";
+              const isRaydium = pair.dexId?.toLowerCase() === "raydium";
               const hasPool = Boolean(pair.pairAddress);
-              const canTrade = !blocked && Boolean(mint) && (forgeLive || (migrated && hasPool));
 
-              // Fair Launch must never carry an arbitrary external pool into
-              // TradeMode. Migrated/graduated routes explicitly request the
-              // Raydium execution model; that trader performs its own on-chain
-              // pool verification before allowing a swap.
+              // A DexScreener pair is discovery data, not proof that its address
+              // is a FORGE-supported pool. Only a Raydium-labelled migrated pair
+              // may enter the Raydium verification flow; the server-side trader
+              // then performs the authoritative on-chain CPMM checks.
+              const canTrade =
+                !blocked &&
+                Boolean(mint) &&
+                (forgeLive || (migrated && isRaydium && hasPool));
+
               const href = forgeLive
                 ? `/trade?mint=${encodeURIComponent(mint ?? "")}`
                 : `/trade?mint=${encodeURIComponent(mint ?? "")}&mode=raydium&pool=${encodeURIComponent(pair.pairAddress ?? "")}`;
@@ -192,7 +197,9 @@ export default function Market() {
                         ? "Trading blocked"
                         : pair.forgeStatus === "WAITING_FOR_DEV_BUY"
                           ? "Awaiting launch"
-                          : "External / unavailable"}
+                          : migrated && pair.dexId
+                            ? "Unsupported pool"
+                            : "External / unavailable"}
                     </span>
                   )}
                 </div>
