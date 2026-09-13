@@ -14,7 +14,7 @@ export const DEFAULT_FAIR_LAUNCH: FairLaunchConfig = {
   virtualSolReserve: 30_000_000_000n,
   virtualTokenReserve: FORGE_X_SUPPLY * 1_000_000_000n,
   graduationSol: 85_000_000_000n,
-  developerMinBuy: 500_000_000n,
+  developerMinBuy: 50_000_000n,
   launchFeeLamports: 20_000_000n,
   tradeFeeBps: 50n,
 };
