@@ -18,7 +18,7 @@ entrypoint!(process_instruction);
 #[cfg(test)]
 mod tests;
 
-const STATE_VERSION: u8 = 2;
+const STATE_VERSION: u8 = 3;
 const STATUS_WAITING_FOR_DEV_BUY: u8 = 0;
 const STATUS_LIVE: u8 = 1;
 const STATUS_GRADUATED: u8 = 2;
@@ -42,10 +42,11 @@ struct State {
     virtual_token_reserve: u64,
     graduation_sol: u64,
     created_at: i64,
+    fee_receiver: Pubkey,
 }
 
 impl State {
-    const LEN: usize = 82;
+    const LEN: usize = 114;
     fn pack(&self, data: &mut [u8]) -> Result<(), ProgramError> {
         if data.len() < Self::LEN { return Err(ProgramError::AccountDataTooSmall); }
         data[0] = STATE_VERSION;
@@ -57,6 +58,7 @@ impl State {
         data[58..66].copy_from_slice(&self.virtual_token_reserve.to_le_bytes());
         data[66..74].copy_from_slice(&self.graduation_sol.to_le_bytes());
         data[74..82].copy_from_slice(&self.created_at.to_le_bytes());
+        data[82..114].copy_from_slice(self.fee_receiver.as_ref());
         Ok(())
     }
     fn unpack(data: &[u8]) -> Result<Self, ProgramError> {
@@ -70,6 +72,7 @@ impl State {
             virtual_token_reserve: u64::from_le_bytes(data[58..66].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             graduation_sol: u64::from_le_bytes(data[66..74].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             created_at: i64::from_le_bytes(data[74..82].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
+            fee_receiver: Pubkey::new_from_array(data[82..114].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
         })
     }
 }
@@ -89,10 +92,11 @@ pub fn process_instruction<'a>(program_id: &Pubkey, accounts: &'a [AccountInfo<'
 
 fn initialize<'a, I>(program_id: &Pubkey, it: &mut I, data: &[u8]) -> ProgramResult
 where I: Iterator<Item = &'a AccountInfo<'a>> {
-    if data.len() != 41 { return Err(ProgramError::InvalidInstructionData); }
+    if data.len() != 73 { return Err(ProgramError::InvalidInstructionData); }
     let state_account = next_account_info(it)?;
     let mint_account = next_account_info(it)?;
     let developer = next_account_info(it)?;
+    let fee_receiver = next_account_info(it)?;
     let system = next_account_info(it)?;
     if !state_account.is_writable || !developer.is_signer || !developer.is_writable || !system_program::check_id(system.key) { return Err(ProgramError::InvalidArgument); }
     if mint_account.owner != &spl_token::id() { return Err(ProgramError::IncorrectProgramId); }
@@ -101,16 +105,17 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     let mint = Mint::unpack(&mint_account.try_borrow_data()?).map_err(|_| ProgramError::InvalidAccountData)?;
     if mint.decimals != DECIMALS || mint.supply != TOTAL_SUPPLY_BASE_UNITS || mint.mint_authority.is_some() || mint.freeze_authority.is_some() { return Err(ProgramError::InvalidArgument); }
     let developer_key = Pubkey::new_from_array(data[1..33].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
-    if developer.key != &developer_key { return Err(ProgramError::InvalidArgument); }
+    if developer.key != &developer_key || fee_receiver.key == &Pubkey::default() { return Err(ProgramError::InvalidArgument); }
     let graduation_sol = u64::from_le_bytes(data[33..41].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
-    if graduation_sol == 0 { return Err(ProgramError::InvalidArgument); }
+    let encoded_fee_receiver = Pubkey::new_from_array(data[41..73].try_into().map_err(|_| ProgramError::InvalidInstructionData)?);
+    if graduation_sol == 0 || fee_receiver.key != &encoded_fee_receiver { return Err(ProgramError::InvalidArgument); }
     if state_account.owner == &system_program::id() {
         let rent = Rent::get()?.minimum_balance(State::LEN);
         invoke_signed(&system_instruction::create_account(developer.key, state_account.key, rent, State::LEN as u64, program_id), &[developer.clone(), state_account.clone(), system.clone()], &[&[STATE_SEED, mint_account.key.as_ref(), &[bump]]])?;
     }
     if state_account.owner != program_id || state_account.data_len() < State::LEN { return Err(ProgramError::InvalidAccountData); }
     if state_account.try_borrow_data()?[0] != 0 { return Err(ProgramError::AccountAlreadyInitialized); }
-    let state = State { developer: *developer.key, status: STATUS_WAITING_FOR_DEV_BUY, developer_bought_lamports: 0, real_sol_raised: 0, virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE, virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS, graduation_sol, created_at: Clock::get()?.unix_timestamp };
+    let state = State { developer: *developer.key, status: STATUS_WAITING_FOR_DEV_BUY, developer_bought_lamports: 0, real_sol_raised: 0, virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE, virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS, graduation_sol, created_at: Clock::get()?.unix_timestamp, fee_receiver: *fee_receiver.key };
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
     Ok(())
 }
@@ -154,6 +159,7 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
     let (vault, _) = validate_token_accounts(mint, token_vault, buyer, buyer_token, program_id)?;
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
+    if state.fee_receiver != *fee_receiver.key { return Err(ProgramError::InvalidArgument); }
     if state.status == STATUS_GRADUATED || state.status == STATUS_MIGRATED || (state.status == STATUS_WAITING_FOR_DEV_BUY && buyer.key != &state.developer) { return Err(ProgramError::InvalidArgument); }
     let gross = parse_amount(data)?;
     if state.status == STATUS_WAITING_FOR_DEV_BUY && gross < MIN_DEV_BUY_LAMPORTS { return Err(ProgramError::InvalidArgument); }
@@ -180,6 +186,7 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
     if state_account.key != &expected_state || state_account.owner != program_id { return Err(ProgramError::InvalidSeeds); }
     let (_, seller_account) = validate_token_accounts(mint, token_vault, seller, seller_token, program_id)?;
     let mut state = State::unpack(&state_account.try_borrow_data()?)?;
+    if state.fee_receiver != *fee_receiver.key { return Err(ProgramError::InvalidArgument); }
     if state.status != STATUS_LIVE { return Err(ProgramError::InvalidArgument); }
     let token_in = parse_amount(data)?; if token_in > seller_account.amount { return Err(ProgramError::InsufficientFunds); }
     let gross_sol = sell_quote(token_in, state.virtual_sol_reserve, state.virtual_token_reserve)?; let (trade_fee, net_sol) = fee(gross_sol)?;
