@@ -33,7 +33,7 @@ async function waitFor(connection: Connection, signature: string, recentBlockhas
     const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
     if (status?.err) throw new Error(`Swap failed: ${JSON.stringify(status.err)}`);
     if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
-    if (!(await connection.isBlockhashValid(recentBlockhash, "confirmed")).value) throw new Error("Swap transaction expired before confirmation");
+    if (!(await connection.isBlockhashValid(recentBlockhash, { commitment: "confirmed" })).value) throw new Error("Swap transaction expired before confirmation");
     await sleep(POLL_MS);
   }
   throw new Error("Timed out waiting for swap confirmation");
