@@ -11,13 +11,17 @@ function parsePublicKey(value: unknown, field: string): PublicKey {
 }
 
 function parseLamports(value: unknown, field: string): bigint {
-  if (typeof value !== "string" && typeof value !== "number") throw new Error(`${field} is required`);
+  // Lamports/token base units must arrive as strings. Accepting JSON numbers
+  // can silently lose integer precision before BigInt() sees the value.
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    throw new Error(`${field} must be a positive integer string`);
+  }
   try {
-    const parsed = BigInt(String(value));
+    const parsed = BigInt(value);
     if (parsed <= 0n) throw new Error();
     return parsed;
   } catch {
-    throw new Error(`${field} must be a positive integer lamport amount`);
+    throw new Error(`${field} must be a positive integer string`);
   }
 }
 
