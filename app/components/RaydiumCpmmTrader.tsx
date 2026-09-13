@@ -17,6 +17,12 @@ type PreparedSwap = { transaction?: string; recentBlockhash?: string; lastValidB
 
 function wallet(): Wallet { return (window as Window & { solana?: Wallet }).solana || {}; }
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function decodeBase64(value: string): Uint8Array {
+  const binary = window.atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
 function parseUnits(value: string, decimals: number): bigint {
   const normalized = value.trim();
   if (!/^\d+(\.\d+)?$/.test(normalized)) throw new Error("Enter a valid amount");
@@ -97,7 +103,16 @@ export function RaydiumCpmmTrader() {
       if (!response.ok || !data.transaction || !data.recentBlockhash || typeof data.lastValidBlockHeight !== "number" || !data.outputAmount || !data.outputMint) throw new Error(data.error || "Unable to prepare Raydium swap");
       setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount || "0", tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
       setStatus("signing");
-      const transaction = VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64"));
+
+      const transaction = VersionedTransaction.deserialize(decodeBase64(data.transaction));
+      if (transaction.message.recentBlockhash !== data.recentBlockhash) {
+        throw new Error("Prepared swap blockhash mismatch. Please try again.");
+      }
+      const payer = transaction.message.staticAccountKeys[0]?.toBase58();
+      if (payer !== w.publicKey.toString()) {
+        throw new Error("Prepared swap wallet does not match the connected wallet.");
+      }
+
       const connection = new Connection(RPC, "confirmed");
       // Wallet approval can take long enough for a blockhash to expire. Never ask the
       // RPC node to accept an already-expired signed transaction.
