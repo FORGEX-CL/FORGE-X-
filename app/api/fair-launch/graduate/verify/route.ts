@@ -10,6 +10,7 @@ const STATE_VERSION = 3;
 const STATUS_MIGRATED = 3;
 const WSOL = "So11111111111111111111111111111111111111112";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_ACCOUNT_LEN = 165;
 const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
 const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY");
 const CPMM_CREATE_POOL_DISCRIMINATOR = Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]);
@@ -95,20 +96,27 @@ function findPoolInstruction(transaction: ConfirmedTransaction, cpmmProgram: Pub
   return { index, wsolUserVault, tokenUserVault, amountA, amountB, mintA, mintB };
 }
 
-function assertDeveloperFundedWsol(parsed: ParsedTransaction, developer: PublicKey, wsolUserVault: PublicKey, expectedSolLamports: bigint): void {
+async function assertDeveloperFundedWsol(parsed: ParsedTransaction, developer: PublicKey, wsolUserVault: PublicKey, expectedSolLamports: bigint, connection: Connection): Promise<void> {
   const instructions = parsed.transaction.message.instructions;
   const fundingIndex = instructions.findIndex((instruction) => {
     if (!("parsed" in instruction) || instruction.program !== "system" || instruction.parsed?.type !== "createAccountWithSeed") return false;
-    const info = instruction.parsed.info as { source?: string; base?: string; newAccount?: string; lamports?: number; space?: number; owner?: string };
+    const info = instruction.parsed.info as { source?: string; base?: string; newAccount?: string; seed?: string; lamports?: number; space?: number; owner?: string };
     return info.source === developer.toBase58() && info.base === developer.toBase58() && info.newAccount === wsolUserVault.toBase58();
   });
   if (fundingIndex < 0) throw new Error("Submitted graduation does not prove developer-funded WSOL account creation");
 
   const funding = instructions[fundingIndex];
   if (!("parsed" in funding) || funding.program !== "system") throw new Error("Invalid WSOL funding instruction");
-  const info = funding.parsed.info as { lamports?: number; space?: number; owner?: string };
-  if (BigInt(info.lamports ?? 0) <= expectedSolLamports) throw new Error("Developer-funded WSOL account does not contain the required graduation SOL");
-  if (info.space !== 165 || info.owner !== TOKEN_PROGRAM) throw new Error("Developer-funded WSOL account has invalid SPL Token account parameters");
+  const info = funding.parsed.info as { source?: string; base?: string; newAccount?: string; seed?: string; lamports?: number; space?: number; owner?: string };
+  if (info.source !== developer.toBase58() || info.base !== developer.toBase58() || info.newAccount !== wsolUserVault.toBase58()) throw new Error("WSOL account creation is not controlled by the graduation developer");
+  if (typeof info.seed !== "string" || info.seed.length > 32) throw new Error("WSOL account creation has an invalid seed");
+  if (info.space !== TOKEN_ACCOUNT_LEN || info.owner !== TOKEN_PROGRAM) throw new Error("Developer-funded WSOL account has invalid SPL Token account parameters");
+  if (!(await PublicKey.createWithSeed(developer, info.seed, new PublicKey(TOKEN_PROGRAM))).equals(wsolUserVault)) throw new Error("WSOL funding account is not the canonical developer-derived account");
+
+  const rent = await connection.getMinimumBalanceForRentExemption(TOKEN_ACCOUNT_LEN, "confirmed");
+  const createdLamports = BigInt(String(info.lamports ?? 0));
+  const expectedCreatedLamports = expectedSolLamports + BigInt(rent);
+  if (createdLamports !== expectedCreatedLamports) throw new Error("Developer-funded WSOL account does not contain exactly the graduation SOL plus required rent");
 
   const initializeIndex = instructions.findIndex((instruction, index) => {
     if (index <= fundingIndex || !("parsed" in instruction) || instruction.program !== "spl-token" || instruction.parsed?.type !== "initializeAccount") return false;
@@ -153,7 +161,7 @@ export async function GET(request: NextRequest) {
     const tokenBaseUnits = data.readBigUInt64LE(58);
     const poolCheck = findPoolInstruction(transaction, expectedCpmmProgram, poolId, mint, developer, realSolRaised, tokenBaseUnits);
     if (migrationIndex >= poolCheck.index) throw new Error("Fair Launch migration must occur before Raydium pool creation");
-    assertDeveloperFundedWsol(parsedTransaction, developer, poolCheck.wsolUserVault, realSolRaised);
+    await assertDeveloperFundedWsol(parsedTransaction, developer, poolCheck.wsolUserVault, realSolRaised, connection);
 
     const raydium = await Raydium.load({ connection, owner: PublicKey.default, disableLoadToken: true });
     const rpcPool = await raydium.cpmm.getPoolInfoFromRpc(poolId.toBase58());
