@@ -1,3 +1,29 @@
 import { Shell, SectionTitle, Card } from "../components/Shell";
-const pools=[["SOL / USDC","$84.2M","24.8%","0.30%"],["JUP / SOL","$12.6M","31.4%","0.30%"],["BONK / SOL","$6.8M","42.1%","0.25%"]];
-export default function Pools(){return <Shell><main className="mx-auto max-w-7xl px-5 py-12 lg:px-8"><SectionTitle eyebrow="Pools" title="Build liquidity." text="Explore pool opportunities and prepare liquidity positions with transparent fee and risk information."/><div className="grid gap-4 md:grid-cols-3">{pools.map(([pair,tvl,apr,fee])=><Card key={pair}><div className="text-xl font-bold">{pair}</div><div className="mt-6 grid grid-cols-3 gap-3 text-sm"><div><div className="text-white/35">TVL</div><div className="mt-1">{tvl}</div></div><div><div className="text-white/35">APR</div><div className="mt-1 text-emerald-400">{apr}</div></div><div><div className="text-white/35">Fee</div><div className="mt-1">{fee}</div></div></div><button className="mt-6 w-full rounded-xl border border-white/10 py-3 text-sm font-semibold hover:bg-white/5">View pool</button></Card>)}</div><Card className="mt-5"><h2 className="text-xl font-bold">Create a pool</h2><p className="mt-2 text-sm text-white/45">The builder will validate token accounts, liquidity amounts, fees and program configuration before any transaction is signed.</p><button className="mt-5 rounded-full bg-[#f5c542] px-6 py-3 font-bold text-black">Start pool builder</button></Card></main></Shell>}
+import { FairLaunchGraduator } from "../components/FairLaunchGraduator";
+
+export default function Pools() {
+  return (
+    <Shell>
+      <main className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
+        <SectionTitle
+          eyebrow="Pools"
+          title="Liquidity, verified on-chain."
+          text="FORGE X uses on-chain state and Raydium CPMM verification rather than showing fabricated pool metrics. Graduated Fair Launches can be migrated atomically from here."
+        />
+        <FairLaunchGraduator />
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Card>
+            <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Pool discovery</p>
+            <h2 className="mt-2 text-xl font-black">Verified pools are coming next</h2>
+            <p className="mt-2 text-sm leading-6 text-white/45">The pool index will be populated from Raydium RPC/API data and verified against the expected CPMM program. Until that index is wired, FORGE X deliberately does not display fake TVL, APR, or volume figures.</p>
+          </Card>
+          <Card>
+            <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Security rule</p>
+            <h2 className="mt-2 text-xl font-black">No “verified” without chain proof</h2>
+            <p className="mt-2 text-sm leading-6 text-white/45">A successful wallet signature is not enough. Graduation now requires the Fair Launch state to be MIGRATED and the resulting pool account to be owned by the expected Raydium CPMM program.</p>
+          </Card>
+        </div>
+      </main>
+    </Shell>
+  );
+}
