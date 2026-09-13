@@ -3,7 +3,8 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { prepareRaydiumCpmmSwap } from "@/lib/raydium-cpmm-swap-builder";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet";
-const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
+const DEFAULT_RPC = CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "";
+const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || DEFAULT_RPC;
 
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
@@ -22,12 +23,15 @@ function amount(value: unknown) {
 
 function slippage(value: unknown) {
   const parsed = Number(value ?? 0.005);
-  if (!Number.isFinite(parsed) || parsed < 0.0001 || parsed > 1) throw new Error("slippage must be between 0.01% and 100%");
+  if (!Number.isFinite(parsed) || parsed < 0.0001 || parsed > 0.05) {
+    throw new Error("slippage must be between 0.01% and 5%");
+  }
   return parsed;
 }
 
 export async function POST(request: NextRequest) {
   try {
+    if (!RPC) throw new Error("A dedicated mainnet SOLANA_RPC_URL is required for Raydium trading");
     const body = await request.json();
     const trader = key(body.trader, "trader");
     const poolId = key(body.poolId, "poolId");
