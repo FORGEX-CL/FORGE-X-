@@ -12,7 +12,18 @@ const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C
 const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY");
 
 type ConfirmedTransaction = NonNullable<Awaited<ReturnType<Connection["getTransaction"]>>>;
+type ParsedTransaction = NonNullable<Awaited<ReturnType<Connection["getParsedTransaction"]>>>;
 type CompiledInstruction = { accountKeyIndexes: readonly number[]; programIdIndex: number; data: string };
+
+type PoolInstructionCheck = {
+  index: number;
+  wsolUserVault: PublicKey;
+  tokenUserVault: PublicKey;
+  amountA: bigint;
+  amountB: bigint;
+  mintA: PublicKey;
+  mintB: PublicKey;
+};
 
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
@@ -60,6 +71,77 @@ function hasInstruction(
   );
 }
 
+function findMigrationIndex(transaction: ConfirmedTransaction, programId: PublicKey, state: PublicKey, mint: PublicKey, developer: PublicKey): number {
+  const keys = accountKeys(transaction);
+  return transaction.transaction.message.compiledInstructions.findIndex((instruction) =>
+    instruction.data === "5" && instructionTouches(instruction, keys, programId, [state, mint, developer]),
+  );
+}
+
+function findPoolInstruction(transaction: ConfirmedTransaction, cpmmProgram: PublicKey, poolId: PublicKey, mint: PublicKey, developer: PublicKey, solLamports: bigint, tokenBaseUnits: bigint): PoolInstructionCheck {
+  const keys = accountKeys(transaction);
+  const matches = transaction.transaction.message.compiledInstructions
+    .map((instruction, index) => ({ instruction, index }))
+    .filter(({ instruction }) => instructionTouches(instruction, keys, cpmmProgram, [poolId]));
+  if (matches.length !== 1) throw new Error("Submitted transaction must contain exactly one expected Raydium pool instruction");
+
+  const { instruction, index } = matches[0];
+  const data = Buffer.from(instruction.data, "base64");
+  if (data.length !== 32 || !data.subarray(0, 8).equals(Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]))) {
+    throw new Error("Submitted transaction contains an unexpected Raydium CPMM instruction");
+  }
+  const ixKeys = instruction.accountKeyIndexes.map((accountIndex) => keys[accountIndex]);
+  const creator = ixKeys[0];
+  const pool = ixKeys[3];
+  const mintA = ixKeys[4];
+  const mintB = ixKeys[5];
+  const userVaultA = ixKeys[7];
+  const userVaultB = ixKeys[8];
+  if (!creator || !pool || !mintA || !mintB || !userVaultA || !userVaultB) throw new Error("Raydium pool instruction has incomplete account wiring");
+  if (!creator.equals(developer)) throw new Error("Raydium pool creator does not match the graduation developer");
+  if (!pool.equals(poolId)) throw new Error("Raydium pool instruction is not bound to the submitted pool ID");
+  if (!mintA.equals(mint) && !mintB.equals(mint)) throw new Error("Raydium pool instruction does not contain the Fair Launch mint");
+  if (!mintA.equals(new PublicKey(WSOL)) && !mintB.equals(new PublicKey(WSOL))) throw new Error("Raydium graduation pool must contain canonical WSOL");
+
+  const tokenIsA = mintA.equals(mint);
+  const tokenUserVault = tokenIsA ? userVaultA : userVaultB;
+  const wsolUserVault = tokenIsA ? userVaultB : userVaultA;
+  const amountA = data.readBigUInt64LE(8);
+  const amountB = data.readBigUInt64LE(16);
+  const expectedA = tokenIsA ? tokenBaseUnits : solLamports;
+  const expectedB = tokenIsA ? solLamports : tokenBaseUnits;
+  if (amountA !== expectedA || amountB !== expectedB) throw new Error("Raydium pool amounts do not match the verified graduation amounts");
+
+  return { index, wsolUserVault, tokenUserVault, amountA, amountB, mintA, mintB };
+}
+
+function assertDeveloperFundedWsol(parsed: ParsedTransaction, developer: PublicKey, wsolUserVault: PublicKey, expectedSolLamports: bigint): void {
+  const instructions = parsed.transaction.message.instructions;
+  const fundingIndex = instructions.findIndex((instruction) => {
+    if (!("parsed" in instruction) || instruction.program !== "system" || instruction.parsed?.type !== "createAccountWithSeed") return false;
+    const info = instruction.parsed.info as { source?: string; base?: string; newAccount?: string; lamports?: number; space?: number; owner?: string };
+    return info.source === developer.toBase58()
+      && info.base === developer.toBase58()
+      && info.newAccount === wsolUserVault.toBase58();
+  });
+  if (fundingIndex < 0) throw new Error("Submitted graduation does not prove developer-funded WSOL account creation");
+
+  const funding = instructions[fundingIndex];
+  if (!("parsed" in funding) || funding.program !== "system") throw new Error("Invalid WSOL funding instruction");
+  const info = funding.parsed.info as { lamports?: number; space?: number; owner?: string };
+  if (BigInt(info.lamports ?? 0) <= expectedSolLamports) throw new Error("Developer-funded WSOL account does not contain the required graduation SOL");
+  if (info.space !== 165 || info.owner !== "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") throw new Error("Developer-funded WSOL account has invalid SPL Token account parameters");
+
+  const initializeIndex = instructions.findIndex((instruction, index) => {
+    if (index <= fundingIndex || !("parsed" in instruction) || instruction.program !== "spl-token" || instruction.parsed?.type !== "initializeAccount") return false;
+    const parsedInfo = instruction.parsed.info as { account?: string; mint?: string; owner?: string };
+    return parsedInfo.account === wsolUserVault.toBase58()
+      && parsedInfo.mint === WSOL
+      && parsedInfo.owner === developer.toBase58();
+  });
+  if (initializeIndex < 0) throw new Error("Developer-funded WSOL source is not initialized for the canonical WSOL mint");
+}
+
 export async function GET(request: NextRequest) {
   try {
     const mint = key(request.nextUrl.searchParams.get("mint"), "mint");
@@ -76,7 +158,11 @@ export async function GET(request: NextRequest) {
 
     const transaction = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
     if (!transaction || transaction.meta?.err) throw new Error("Graduation transaction was not found or failed");
-    if (!hasInstruction(transaction, programId, [state, mint, developer], "5")) throw new Error("Submitted transaction does not contain the expected Fair Launch migration instruction");
+    const parsedTransaction = await connection.getParsedTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+    if (!parsedTransaction || parsedTransaction.meta?.err) throw new Error("Unable to parse the confirmed graduation transaction");
+
+    const migrationIndex = findMigrationIndex(transaction, programId, state, mint, developer);
+    if (migrationIndex < 0) throw new Error("Submitted transaction does not contain the expected Fair Launch migration instruction");
 
     const stateInfo = await connection.getAccountInfo(state, "confirmed");
     if (!stateInfo || stateInfo.data.length !== STATE_LEN || !stateInfo.owner.equals(programId)) throw new Error("Fair Launch state is missing, has an invalid layout, or is owned by the wrong program");
@@ -87,7 +173,11 @@ export async function GET(request: NextRequest) {
     if (data[33] !== STATUS_MIGRATED) throw new Error("Fair Launch has not been migrated yet");
 
     const expectedCpmmProgram = CLUSTER === "devnet" ? DEVNET_CPMM : MAINNET_CPMM;
-    if (!hasInstruction(transaction, expectedCpmmProgram, [poolId])) throw new Error("Submitted transaction does not contain the expected Raydium pool instruction");
+    const realSolRaised = data.readBigUInt64LE(42);
+    const tokenBaseUnits = data.readBigUInt64LE(58);
+    const poolCheck = findPoolInstruction(transaction, expectedCpmmProgram, poolId, mint, developer, realSolRaised, tokenBaseUnits);
+    if (migrationIndex >= poolCheck.index) throw new Error("Fair Launch migration must occur before Raydium pool creation");
+    assertDeveloperFundedWsol(parsedTransaction, developer, poolCheck.wsolUserVault, realSolRaised);
 
     const raydium = await Raydium.load({ connection, owner: PublicKey.default, disableLoadToken: true });
     const rpcPool = await raydium.cpmm.getPoolInfoFromRpc(poolId.toBase58());
