@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Connection, VersionedTransaction } from "@solana/web3.js";
 
-const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
+const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet";
+const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "");
 const WSOL = "So11111111111111111111111111111111111111112";
 const POLL_MS = 500;
 const TIMEOUT_MS = 90_000;
@@ -79,6 +80,7 @@ export function RaydiumCpmmTrader() {
 
   async function swap() {
     const w = wallet();
+    if (!RPC) { setError("Mainnet trading requires a configured NEXT_PUBLIC_SOLANA_RPC_URL."); return; }
     if (!w.publicKey || !w.signTransaction) { setError("Connect a Solana wallet first."); return; }
     if (!poolId.trim() || !input || !output) { setError("Enter a verified Raydium CPMM pool."); return; }
     if (!amount.trim()) { setError("Enter a swap amount."); return; }
@@ -121,7 +123,7 @@ export function RaydiumCpmmTrader() {
       {quote && <div className="mt-4 grid gap-2 rounded-xl border border-white/10 p-4 text-xs text-white/45"><div className="flex justify-between"><span>Minimum received</span><span>{formatUnits(quote.minimumOutputAmount, outputDecimals)} {output?.symbol || "TOKEN"}</span></div><div className="flex justify-between"><span>Pool trade fee</span><span>{formatUnits(quote.tradeFee, input?.decimals ?? 9)} {input?.symbol || "TOKEN"}</span></div></div>}
       <button onClick={swap} disabled={status === "preparing" || status === "signing" || status === "confirming" || loadingPool} className="mt-5 w-full rounded-xl bg-[#f5c542] py-3 font-bold text-black disabled:opacity-40">{status === "preparing" ? "Preparing…" : status === "signing" ? "Approve in wallet…" : status === "confirming" ? "Confirming…" : status === "confirmed" ? "Swap confirmed ✓" : "Swap on Raydium"}</button>
     </>}
-    {signature && <a className="mt-3 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${signature}?cluster=${process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "devnet"}`} target="_blank" rel="noreferrer">View transaction</a>}
+    {signature && <a className="mt-3 block break-all text-xs text-[#f5c542]" href={`https://solscan.io/tx/${signature}?cluster=${CLUSTER}`} target="_blank" rel="noreferrer">View transaction</a>}
     {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
   </div>;
 }
