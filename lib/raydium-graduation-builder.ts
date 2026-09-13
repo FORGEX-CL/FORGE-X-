@@ -109,6 +109,7 @@ async function assertDeveloperFundedWsolSource(
       && ix.keys[0]?.isWritable
       && ix.keys[1]?.pubkey.equals(wsolUserVault)
       && ix.keys[1]?.isWritable
+      && !ix.keys[1]?.isSigner
       && ix.keys[2]?.pubkey.equals(developer)
       && ix.keys[2]?.isSigner;
   });
