@@ -57,7 +57,7 @@ fn sell_quote_is_positive_for_valid_trade() {
 }
 
 #[test]
-fn state_round_trip_preserves_all_fields() {
+fn state_round_trip_preserves_all_fields_including_fee_receiver() {
     let state = State {
         developer: Pubkey::new_unique(),
         status: STATUS_LIVE,
@@ -67,6 +67,7 @@ fn state_round_trip_preserves_all_fields() {
         virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS - 123_456,
         graduation_sol: 85_000_000_000,
         created_at: 1_750_000_000,
+        fee_receiver: Pubkey::new_unique(),
     };
 
     let mut bytes = vec![0u8; State::LEN];
@@ -81,6 +82,13 @@ fn state_round_trip_preserves_all_fields() {
     assert_eq!(decoded.virtual_token_reserve, state.virtual_token_reserve);
     assert_eq!(decoded.graduation_sol, state.graduation_sol);
     assert_eq!(decoded.created_at, state.created_at);
+    assert_eq!(decoded.fee_receiver, state.fee_receiver);
+}
+
+#[test]
+fn state_layout_and_version_are_explicit() {
+    assert_eq!(STATE_VERSION, 3);
+    assert_eq!(State::LEN, 114);
 }
 
 #[test]
