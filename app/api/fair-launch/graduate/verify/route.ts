@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { Raydium } from "@raydium-io/raydium-sdk-v2";
+import bs58 from "bs58";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
@@ -8,8 +9,10 @@ const STATE_LEN = 114;
 const STATE_VERSION = 3;
 const STATUS_MIGRATED = 3;
 const WSOL = "So11111111111111111111111111111111111111112";
+const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
 const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY");
+const CPMM_CREATE_POOL_DISCRIMINATOR = Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]);
 
 type ConfirmedTransaction = NonNullable<Awaited<ReturnType<Connection["getTransaction"]>>>;
 type ParsedTransaction = NonNullable<Awaited<ReturnType<Connection["getParsedTransaction"]>>>;
@@ -41,34 +44,13 @@ function positiveAmount(value: unknown, field: string): string {
 function accountKeys(transaction: ConfirmedTransaction): PublicKey[] {
   const staticKeys = transaction.transaction.message.getAccountKeys().staticAccountKeys;
   const loaded = transaction.meta?.loadedAddresses;
-  return [
-    ...staticKeys,
-    ...(loaded?.writable ?? []),
-    ...(loaded?.readonly ?? []),
-  ];
+  return [...staticKeys, ...(loaded?.writable ?? []), ...(loaded?.readonly ?? [])];
 }
 
-function instructionTouches(
-  instruction: CompiledInstruction,
-  keys: readonly PublicKey[],
-  programId: PublicKey,
-  requiredAccounts: PublicKey[],
-): boolean {
+function instructionTouches(instruction: CompiledInstruction, keys: readonly PublicKey[], programId: PublicKey, requiredAccounts: PublicKey[]): boolean {
   if (!keys[instruction.programIdIndex]?.equals(programId)) return false;
   const accounts = new Set(instruction.accountKeyIndexes.map((index) => keys[index]?.toBase58()));
   return requiredAccounts.every((account) => accounts.has(account.toBase58()));
-}
-
-function hasInstruction(
-  transaction: ConfirmedTransaction,
-  programId: PublicKey,
-  requiredAccounts: PublicKey[],
-  data?: string,
-): boolean {
-  const keys = accountKeys(transaction);
-  return transaction.transaction.message.compiledInstructions.some((instruction) =>
-    (!data || instruction.data === data) && instructionTouches(instruction, keys, programId, requiredAccounts),
-  );
 }
 
 function findMigrationIndex(transaction: ConfirmedTransaction, programId: PublicKey, state: PublicKey, mint: PublicKey, developer: PublicKey): number {
@@ -86,10 +68,9 @@ function findPoolInstruction(transaction: ConfirmedTransaction, cpmmProgram: Pub
   if (matches.length !== 1) throw new Error("Submitted transaction must contain exactly one expected Raydium pool instruction");
 
   const { instruction, index } = matches[0];
-  const data = Buffer.from(instruction.data, "base64");
-  if (data.length !== 32 || !data.subarray(0, 8).equals(Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]))) {
-    throw new Error("Submitted transaction contains an unexpected Raydium CPMM instruction");
-  }
+  const data = Buffer.from(bs58.decode(instruction.data));
+  if (data.length !== 32 || !data.subarray(0, 8).equals(CPMM_CREATE_POOL_DISCRIMINATOR)) throw new Error("Submitted transaction contains an unexpected Raydium CPMM instruction");
+
   const ixKeys = instruction.accountKeyIndexes.map((accountIndex) => keys[accountIndex]);
   const creator = ixKeys[0];
   const pool = ixKeys[3];
@@ -111,7 +92,6 @@ function findPoolInstruction(transaction: ConfirmedTransaction, cpmmProgram: Pub
   const expectedA = tokenIsA ? tokenBaseUnits : solLamports;
   const expectedB = tokenIsA ? solLamports : tokenBaseUnits;
   if (amountA !== expectedA || amountB !== expectedB) throw new Error("Raydium pool amounts do not match the verified graduation amounts");
-
   return { index, wsolUserVault, tokenUserVault, amountA, amountB, mintA, mintB };
 }
 
@@ -120,9 +100,7 @@ function assertDeveloperFundedWsol(parsed: ParsedTransaction, developer: PublicK
   const fundingIndex = instructions.findIndex((instruction) => {
     if (!("parsed" in instruction) || instruction.program !== "system" || instruction.parsed?.type !== "createAccountWithSeed") return false;
     const info = instruction.parsed.info as { source?: string; base?: string; newAccount?: string; lamports?: number; space?: number; owner?: string };
-    return info.source === developer.toBase58()
-      && info.base === developer.toBase58()
-      && info.newAccount === wsolUserVault.toBase58();
+    return info.source === developer.toBase58() && info.base === developer.toBase58() && info.newAccount === wsolUserVault.toBase58();
   });
   if (fundingIndex < 0) throw new Error("Submitted graduation does not prove developer-funded WSOL account creation");
 
@@ -130,14 +108,12 @@ function assertDeveloperFundedWsol(parsed: ParsedTransaction, developer: PublicK
   if (!("parsed" in funding) || funding.program !== "system") throw new Error("Invalid WSOL funding instruction");
   const info = funding.parsed.info as { lamports?: number; space?: number; owner?: string };
   if (BigInt(info.lamports ?? 0) <= expectedSolLamports) throw new Error("Developer-funded WSOL account does not contain the required graduation SOL");
-  if (info.space !== 165 || info.owner !== "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") throw new Error("Developer-funded WSOL account has invalid SPL Token account parameters");
+  if (info.space !== 165 || info.owner !== TOKEN_PROGRAM) throw new Error("Developer-funded WSOL account has invalid SPL Token account parameters");
 
   const initializeIndex = instructions.findIndex((instruction, index) => {
     if (index <= fundingIndex || !("parsed" in instruction) || instruction.program !== "spl-token" || instruction.parsed?.type !== "initializeAccount") return false;
     const parsedInfo = instruction.parsed.info as { account?: string; mint?: string; owner?: string };
-    return parsedInfo.account === wsolUserVault.toBase58()
-      && parsedInfo.mint === WSOL
-      && parsedInfo.owner === developer.toBase58();
+    return parsedInfo.account === wsolUserVault.toBase58() && parsedInfo.mint === WSOL && parsedInfo.owner === developer.toBase58();
   });
   if (initializeIndex < 0) throw new Error("Developer-funded WSOL source is not initialized for the canonical WSOL mint");
 }
@@ -199,19 +175,7 @@ export async function GET(request: NextRequest) {
     const wsolVaultAmount = mintA === WSOL ? vaultAAmount : vaultBAmount;
     if (BigInt(tokenVaultAmount) <= 0n || BigInt(wsolVaultAmount) <= 0n) throw new Error("Migrated pool does not contain positive token and WSOL liquidity");
 
-    return NextResponse.json({
-      verified: true,
-      cluster: CLUSTER,
-      mint: mint.toBase58(),
-      developer: developer.toBase58(),
-      signature,
-      fairLaunchState: state.toBase58(),
-      fairLaunchStatus: "MIGRATED",
-      poolId: poolId.toBase58(),
-      poolProgramId: poolAccount.owner.toBase58(),
-      poolMints: [mintA, mintB],
-      liquidity: { tokenBaseUnits: tokenVaultAmount, wsolLamports: wsolVaultAmount },
-    });
+    return NextResponse.json({ verified: true, cluster: CLUSTER, mint: mint.toBase58(), developer: developer.toBase58(), signature, fairLaunchState: state.toBase58(), fairLaunchStatus: "MIGRATED", poolId: poolId.toBase58(), poolProgramId: poolAccount.owner.toBase58(), poolMints: [mintA, mintB], liquidity: { tokenBaseUnits: tokenVaultAmount, wsolLamports: wsolVaultAmount } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to verify graduation";
     return NextResponse.json({ verified: false, error: message }, { status: 400 });
