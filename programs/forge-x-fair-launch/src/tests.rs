@@ -1,9 +1,9 @@
 use super::*;
 
 #[test]
-fn developer_minimum_buy_is_exactly_half_sol() {
-    assert_eq!(MIN_DEV_BUY_LAMPORTS, 500_000_000);
-    assert!(MIN_DEV_BUY_LAMPORTS >= 500_000_000);
+fn developer_minimum_buy_is_exactly_point_zero_five_sol() {
+    assert_eq!(MIN_DEV_BUY_LAMPORTS, 50_000_000);
+    assert!(MIN_DEV_BUY_LAMPORTS >= 50_000_000);
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn fee_never_exceeds_gross_amount() {
 fn buy_quote_reduces_virtual_token_reserve() {
     let vs = INITIAL_VIRTUAL_SOL_RESERVE;
     let vt = TOTAL_SUPPLY_BASE_UNITS;
-    let out = buy_quote(500_000_000, vs, vt).expect("buy quote");
+    let out = buy_quote(50_000_000, vs, vt).expect("buy quote");
     assert!(out > 0);
     assert!(out < vt);
 }
@@ -52,8 +52,6 @@ fn sell_quote_rejects_full_virtual_reserve() {
 
 #[test]
 fn sell_quote_is_positive_for_valid_trade() {
-    // A 1,000,000 base-unit sale rounds to zero lamports at the initial
-    // reserves. Use a larger valid trade to verify a positive quote.
     let out = sell_quote(1_000_000_000_000, INITIAL_VIRTUAL_SOL_RESERVE, TOTAL_SUPPLY_BASE_UNITS).expect("sell quote");
     assert!(out > 0);
 }
@@ -63,7 +61,7 @@ fn state_round_trip_preserves_all_fields() {
     let state = State {
         developer: Pubkey::new_unique(),
         status: STATUS_LIVE,
-        developer_bought_lamports: 500_000_000,
+        developer_bought_lamports: 50_000_000,
         real_sol_raised: 12_345_678,
         virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE + 12_345_678,
         virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS - 123_456,
