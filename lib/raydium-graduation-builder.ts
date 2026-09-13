@@ -3,7 +3,7 @@ import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-import { ComputeBudgetProgram, Connection, PublicKey, TransactionInstruction, VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, PublicKey, SystemProgram, TransactionInstruction, VersionedTransaction } from "@solana/web3.js";
 import BN from "bn.js";
 import { Raydium, CREATE_CPMM_POOL_FEE_ACC, CREATE_CPMM_POOL_PROGRAM, DEVNET_PROGRAM_ID, TxVersion, getCpmmPdaAmmConfigId } from "@raydium-io/raydium-sdk-v2";
 import { buildMigrateFairLaunchToDeveloper, fairLaunchStatePda, fairLaunchVaultAta } from "./fair-launch-program";
@@ -16,6 +16,8 @@ const SPL_TOKEN_MINT_OFFSET = 0;
 const SPL_TOKEN_OWNER_OFFSET = 32;
 const SPL_TOKEN_AMOUNT_OFFSET = 64;
 const CPMM_CREATE_POOL_DISCRIMINATOR = Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]);
+const SYSTEM_CREATE_ACCOUNT_WITH_SEED = 3;
+const WSOL = new PublicKey("So11111111111111111111111111111111111111112");
 
 export type GraduationTransactionInput = {
   connection: Connection;
@@ -66,6 +68,62 @@ function assertTokenAccount(accountData: Buffer, expectedMint: PublicKey, expect
   if (!accountOwner.equals(expectedOwner)) throw new Error(`${label} is controlled by the wrong owner`);
 }
 
+function readCreateAccountWithSeed(data: Buffer): { lamports: bigint; space: bigint; owner: PublicKey; seed: string } | null {
+  if (data.length < 4 + 8 + 8 + 32 + 4) return null;
+  if (data.readUInt32LE(0) !== SYSTEM_CREATE_ACCOUNT_WITH_SEED) return null;
+  const lamports = data.readBigUInt64LE(4);
+  const space = data.readBigUInt64LE(12);
+  const owner = new PublicKey(data.subarray(20, 52));
+  const seedLength = data.readUInt32LE(52);
+  const end = 56 + seedLength;
+  if (end !== data.length) return null;
+  return { lamports, space, owner, seed: data.subarray(56, end).toString("utf8") };
+}
+
+async function assertDeveloperFundedWsolSource(
+  instructions: TransactionInstruction[],
+  createPoolIndex: number,
+  developer: PublicKey,
+  wsolUserVault: PublicKey,
+  expectedSolLamports: bigint,
+  connection: Connection,
+): Promise<void> {
+  const createIndex = instructions.findIndex((ix, index) => {
+    if (index >= createPoolIndex || !ix.programId.equals(SystemProgram.programId)) return false;
+    const parsed = readCreateAccountWithSeed(Buffer.from(ix.data));
+    return !!parsed
+      && ix.keys[0]?.pubkey.equals(developer)
+      && ix.keys[0]?.isSigner
+      && ix.keys[0]?.isWritable
+      && ix.keys[1]?.pubkey.equals(wsolUserVault)
+      && ix.keys[1]?.isWritable
+      && ix.keys[2]?.pubkey.equals(developer)
+      && ix.keys[2]?.isSigner;
+  });
+  if (createIndex < 0) throw new Error("Graduation SOL must be funded by the developer's signed WSOL account creation");
+
+  const fundingInstruction = instructions[createIndex];
+  const parsed = readCreateAccountWithSeed(Buffer.from(fundingInstruction.data));
+  if (!parsed) throw new Error("Invalid WSOL funding instruction");
+  if (!parsed.owner.equals(TOKEN_PROGRAM_ID)) throw new Error("Graduation WSOL source is not owned by the SPL Token program");
+  if (parsed.space !== BigInt(SPL_TOKEN_ACCOUNT_LEN)) throw new Error("Graduation WSOL source has an invalid token-account size");
+
+  const rent = await connection.getMinimumBalanceForRentExemption(SPL_TOKEN_ACCOUNT_LEN, "confirmed");
+  const expectedCreatedLamports = expectedSolLamports + BigInt(rent);
+  if (parsed.lamports !== expectedCreatedLamports) throw new Error("Developer-funded WSOL account does not contain exactly the graduation SOL plus required rent");
+
+  const initializeIndex = instructions.findIndex((ix, index) =>
+    index > createIndex && index < createPoolIndex
+      && ix.programId.equals(TOKEN_PROGRAM_ID)
+      && ix.keys[0]?.pubkey.equals(wsolUserVault)
+      && ix.keys[0]?.isWritable
+      && ix.keys[1]?.pubkey.equals(WSOL)
+      && ix.keys[2]?.pubkey.equals(developer)
+      && ix.keys[2]?.isSigner,
+  );
+  if (initializeIndex < 0) throw new Error("Developer-funded WSOL source is not initialized for the canonical WSOL mint");
+}
+
 function assertRaydiumCreatePoolInstruction(
   instructions: TransactionInstruction[],
   cpmmProgramId: PublicKey,
@@ -75,7 +133,7 @@ function assertRaydiumCreatePoolInstruction(
   mint: PublicKey,
   tokenBaseUnits: bigint,
   solLamports: bigint,
-): number {
+): { index: number; wsolUserVault: PublicKey } {
   const matching = instructions.filter((ix) => ix.programId.equals(cpmmProgramId) && ix.keys.some((key) => key.pubkey.equals(poolId)));
   if (matching.length !== 1) throw new Error("Graduation transaction must contain exactly one Raydium CPMM pool-creation instruction");
 
@@ -93,9 +151,11 @@ function assertRaydiumCreatePoolInstruction(
   const userVaultB = instruction.keys[8]?.pubkey;
   if (!mintA || !mintB || !userVaultA || !userVaultB) throw new Error("Raydium CPMM pool instruction is missing required accounts");
   if (!(mintA.equals(mint) || mintB.equals(mint))) throw new Error("Raydium pool instruction does not contain the graduation mint");
+  if (!(mintA.equals(WSOL) || mintB.equals(WSOL))) throw new Error("Raydium graduation pool must use canonical WSOL");
 
   const tokenIsA = mintA.equals(mint);
   const tokenUserVault = tokenIsA ? userVaultA : userVaultB;
+  const wsolUserVault = tokenIsA ? userVaultB : userVaultA;
   if (!tokenUserVault.equals(developerTokenAccount)) throw new Error("Raydium CPMM is not sourcing the graduation token from the developer ATA");
 
   const amountA = readU64(data, 8);
@@ -104,7 +164,7 @@ function assertRaydiumCreatePoolInstruction(
   const expectedB = tokenIsA ? solLamports : tokenBaseUnits;
   if (amountA !== expectedA || amountB !== expectedB) throw new Error("Raydium CPMM liquidity amounts do not match the verified graduation amounts");
 
-  return instructions.indexOf(instruction);
+  return { index: instructions.indexOf(instruction), wsolUserVault };
 }
 
 export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionInput): Promise<PreparedGraduationTransaction> {
@@ -129,7 +189,7 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
   const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
   const raydium = await Raydium.load({ owner: input.developer, connection: input.connection, cluster });
   const tokenInfo = await raydium.token.getTokenInfo(input.mint.toBase58());
-  const nativeInfo = await raydium.token.getTokenInfo("So11111111111111111111111111111111111111112");
+  const nativeInfo = await raydium.token.getTokenInfo(WSOL.toBase58());
   const feeConfigs = await raydium.api.getCpmmConfigs();
   if (!feeConfigs.length) throw new Error("No Raydium CPMM fee configuration is available");
 
@@ -166,7 +226,7 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
   const migrationIndex = firstNonCompute < 0 ? instructions.length : firstNonCompute;
   instructions.splice(migrationIndex, 0, migrationInstruction);
 
-  const poolInstructionIndex = assertRaydiumCreatePoolInstruction(
+  const poolCheck = assertRaydiumCreatePoolInstruction(
     instructions,
     cpmmProgramId,
     extInfo.address.poolId,
@@ -176,7 +236,15 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
     input.tokenBaseUnits,
     input.solLamports,
   );
-  if (migrationIndex >= poolInstructionIndex) throw new Error("Fair Launch migration must execute before Raydium consumes the developer liquidity");
+  if (migrationIndex >= poolCheck.index) throw new Error("Fair Launch migration must execute before Raydium consumes the developer liquidity");
+  await assertDeveloperFundedWsolSource(
+    instructions,
+    poolCheck.index,
+    input.developer,
+    poolCheck.wsolUserVault,
+    input.solLamports,
+    input.connection,
+  );
 
   const rebuilt = await builder.versionBuild({ txVersion: TxVersion.V0, extInfo, lookupTableAddress: builder.AllTxData.lookupTableAddress });
   if (!(rebuilt.transaction instanceof VersionedTransaction)) throw new Error("Raydium CPMM graduation did not produce a versioned transaction");
