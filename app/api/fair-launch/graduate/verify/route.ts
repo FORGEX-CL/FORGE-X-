@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { CREATE_CPMM_POOL_PROGRAM, Raydium } from "@raydium-io/raydium-sdk-v2";
+import { Raydium } from "@raydium-io/raydium-sdk-v2";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
@@ -10,6 +10,9 @@ const STATUS_MIGRATED = 3;
 const WSOL = "So11111111111111111111111111111111111111112";
 const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
 const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY");
+
+type ConfirmedTransaction = NonNullable<Awaited<ReturnType<Connection["getTransaction"]>>>;
+type CompiledInstruction = { accountKeyIndexes: readonly number[]; programIdIndex: number; data: string };
 
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
@@ -24,40 +27,36 @@ function positiveAmount(value: unknown, field: string): string {
   return amount;
 }
 
+function accountKeys(transaction: ConfirmedTransaction): PublicKey[] {
+  const staticKeys = transaction.transaction.message.getAccountKeys().staticAccountKeys;
+  const loaded = transaction.meta?.loadedAddresses;
+  return [
+    ...staticKeys,
+    ...(loaded?.writable ?? []),
+    ...(loaded?.readonly ?? []),
+  ];
+}
+
 function instructionTouches(
-  instruction: { accountKeyIndexes: readonly number[]; programIdIndex: number; data: string },
-  accountKeys: readonly PublicKey[],
+  instruction: CompiledInstruction,
+  keys: readonly PublicKey[],
   programId: PublicKey,
   requiredAccounts: PublicKey[],
 ): boolean {
-  if (!accountKeys[instruction.programIdIndex]?.equals(programId)) return false;
-  const accounts = new Set(instruction.accountKeyIndexes.map((index) => accountKeys[index]?.toBase58()));
+  if (!keys[instruction.programIdIndex]?.equals(programId)) return false;
+  const accounts = new Set(instruction.accountKeyIndexes.map((index) => keys[index]?.toBase58()));
   return requiredAccounts.every((account) => accounts.has(account.toBase58()));
 }
 
-function hasMigrationInstruction(
-  transaction: NonNullable<Awaited<ReturnType<Connection["getTransaction"]>>>,
-  forgeProgram: PublicKey,
-  state: PublicKey,
-  mint: PublicKey,
-  developer: PublicKey,
+function hasInstruction(
+  transaction: ConfirmedTransaction,
+  programId: PublicKey,
+  requiredAccounts: PublicKey[],
+  data?: string,
 ): boolean {
-  const message = transaction.transaction.message;
-  const accountKeys = message.getAccountKeys().staticAccountKeys;
-  return message.compiledInstructions.some((instruction) =>
-    instruction.data === "5" && instructionTouches(instruction, accountKeys, forgeProgram, [state, mint, developer]),
-  );
-}
-
-function hasPoolInstruction(
-  transaction: NonNullable<Awaited<ReturnType<Connection["getTransaction"]>>>,
-  cpmmProgram: PublicKey,
-  poolId: PublicKey,
-): boolean {
-  const message = transaction.transaction.message;
-  const accountKeys = message.getAccountKeys().staticAccountKeys;
-  return message.compiledInstructions.some((instruction) =>
-    instructionTouches(instruction, accountKeys, cpmmProgram, [poolId]),
+  const keys = accountKeys(transaction);
+  return transaction.transaction.message.compiledInstructions.some((instruction) =>
+    (!data || instruction.data === data) && instructionTouches(instruction, keys, programId, requiredAccounts),
   );
 }
 
@@ -77,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     const transaction = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
     if (!transaction || transaction.meta?.err) throw new Error("Graduation transaction was not found or failed");
-    if (!hasMigrationInstruction(transaction, programId, state, mint, developer)) throw new Error("Submitted transaction does not contain the expected Fair Launch migration instruction");
+    if (!hasInstruction(transaction, programId, [state, mint, developer], "5")) throw new Error("Submitted transaction does not contain the expected Fair Launch migration instruction");
 
     const stateInfo = await connection.getAccountInfo(state, "confirmed");
     if (!stateInfo || stateInfo.data.length !== STATE_LEN || !stateInfo.owner.equals(programId)) throw new Error("Fair Launch state is missing, has an invalid layout, or is owned by the wrong program");
@@ -88,7 +87,7 @@ export async function GET(request: NextRequest) {
     if (data[33] !== STATUS_MIGRATED) throw new Error("Fair Launch has not been migrated yet");
 
     const expectedCpmmProgram = CLUSTER === "devnet" ? DEVNET_CPMM : MAINNET_CPMM;
-    if (!hasPoolInstruction(transaction, expectedCpmmProgram, poolId)) throw new Error("Submitted transaction does not contain the expected Raydium pool instruction");
+    if (!hasInstruction(transaction, expectedCpmmProgram, [poolId])) throw new Error("Submitted transaction does not contain the expected Raydium pool instruction");
 
     const raydium = await Raydium.load({ connection, owner: PublicKey.default, disableLoadToken: true });
     const rpcPool = await raydium.cpmm.getPoolInfoFromRpc(poolId.toBase58());
