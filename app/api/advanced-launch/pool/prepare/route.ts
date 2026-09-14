@@ -29,7 +29,6 @@ export async function POST(request: NextRequest) {
 
     const connection = new Connection(RPC, "confirmed");
     const prepared = await prepareRaydiumCpmmPool({ connection, wallet, mint, tokenBaseUnits, solLamports });
-    const latest = await connection.getLatestBlockhash("confirmed");
 
     return NextResponse.json({
       transaction: Buffer.from(prepared.transaction.serialize()).toString("base64"),
@@ -38,7 +37,6 @@ export async function POST(request: NextRequest) {
       mint: prepared.mint.toBase58(),
       tokenBaseUnits: prepared.tokenBaseUnits.toString(),
       solLamports: prepared.solLamports.toString(),
-      lastValidBlockHeight: latest.lastValidBlockHeight,
       cluster: CLUSTER,
       requiresWalletSignature: true,
       simulated: true,
