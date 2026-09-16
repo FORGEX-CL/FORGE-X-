@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { Raydium } from "@raydium-io/raydium-sdk-v2";
-import bs58 from "bs58";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
@@ -17,7 +16,7 @@ const CPMM_CREATE_POOL_DISCRIMINATOR = Buffer.from([175, 175, 109, 31, 13, 152, 
 
 type ConfirmedTransaction = NonNullable<Awaited<ReturnType<Connection["getTransaction"]>>>;
 type ParsedTransaction = NonNullable<Awaited<ReturnType<Connection["getParsedTransaction"]>>>;
-type CompiledInstruction = { accountKeyIndexes: readonly number[]; programIdIndex: number; data: string };
+type CompiledInstruction = { accountKeyIndexes: readonly number[]; programIdIndex: number; data: Uint8Array };
 
 type PoolInstructionCheck = {
   index: number;
@@ -57,7 +56,7 @@ function instructionTouches(instruction: CompiledInstruction, keys: readonly Pub
 function findMigrationIndex(transaction: ConfirmedTransaction, programId: PublicKey, state: PublicKey, mint: PublicKey, developer: PublicKey): number {
   const keys = accountKeys(transaction);
   return transaction.transaction.message.compiledInstructions.findIndex((instruction) =>
-    instruction.data === "5" && instructionTouches(instruction, keys, programId, [state, mint, developer]),
+    instruction.data.length === 1 && instruction.data[0] === 5 && instructionTouches(instruction, keys, programId, [state, mint, developer]),
   );
 }
 
@@ -69,7 +68,7 @@ function findPoolInstruction(transaction: ConfirmedTransaction, cpmmProgram: Pub
   if (matches.length !== 1) throw new Error("Submitted transaction must contain exactly one expected Raydium pool instruction");
 
   const { instruction, index } = matches[0];
-  const data = Buffer.from(bs58.decode(instruction.data));
+  const data = Buffer.from(instruction.data);
   if (data.length !== 32 || !data.subarray(0, 8).equals(CPMM_CREATE_POOL_DISCRIMINATOR)) throw new Error("Submitted transaction contains an unexpected Raydium CPMM instruction");
 
   const ixKeys = instruction.accountKeyIndexes.map((accountIndex) => keys[accountIndex]);
