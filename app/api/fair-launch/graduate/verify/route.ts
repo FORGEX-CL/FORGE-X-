@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Raydium } from "@raydium-io/raydium-sdk-v2";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
@@ -8,7 +9,7 @@ const STATE_LEN = 114;
 const STATE_VERSION = 3;
 const STATUS_MIGRATED = 3;
 const WSOL = "So11111111111111111111111111111111111111112";
-const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_PROGRAM = TOKEN_PROGRAM_ID.toBase58();
 const TOKEN_ACCOUNT_LEN = 165;
 const MAINNET_CPMM = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
 const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY");
@@ -47,6 +48,11 @@ function accountKeys(transaction: ConfirmedTransaction): PublicKey[] {
   return [...staticKeys, ...(loaded?.writable ?? []), ...(loaded?.readonly ?? [])];
 }
 
+function fairLaunchVaultAta(mint: PublicKey, programId: PublicKey): PublicKey {
+  const [state] = PublicKey.findProgramAddressSync([Buffer.from("launch"), mint.toBuffer()], programId);
+  return getAssociatedTokenAddressSync(mint, state, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+}
+
 function exactMigrationInstruction(
   instruction: CompiledInstruction,
   keys: readonly PublicKey[],
@@ -60,27 +66,15 @@ function exactMigrationInstruction(
   if (instruction.accountKeyIndexes.length !== 7) return false;
   const ixKeys = instruction.accountKeyIndexes.map((index) => keys[index]);
   if (ixKeys.some((account) => !account)) return false;
+  const vault = fairLaunchVaultAta(mint, programId);
+  const destination = getAssociatedTokenAddressSync(mint, developer, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
   return ixKeys[0].equals(state)
     && ixKeys[1].equals(mint)
     && ixKeys[2].equals(developer)
-    && ixKeys[3].equals(fairLaunchVaultAta(mint, programId))
-    && ixKeys[4].equals(getAssociatedTokenAddressSync(mint, developer))
+    && ixKeys[3].equals(vault)
+    && ixKeys[4].equals(destination)
     && ixKeys[5].equals(new PublicKey("11111111111111111111111111111111"))
-    && ixKeys[6].equals(new PublicKey(TOKEN_PROGRAM));
-}
-
-function fairLaunchVaultAta(mint: PublicKey, programId: PublicKey): PublicKey {
-  const [vault] = PublicKey.findProgramAddressSync([Buffer.from("vault"), mint.toBuffer()], programId);
-  return vault;
-}
-
-function getAssociatedTokenAddressSync(mint: PublicKey, owner: PublicKey): PublicKey {
-  const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-  const [ata] = PublicKey.findProgramAddressSync(
-    [owner.toBuffer(), new PublicKey(TOKEN_PROGRAM).toBuffer(), mint.toBuffer()],
-    ASSOCIATED_TOKEN_PROGRAM,
-  );
-  return ata;
+    && ixKeys[6].equals(TOKEN_PROGRAM_ID);
 }
 
 function findMigrationIndex(transaction: ConfirmedTransaction, programId: PublicKey, state: PublicKey, mint: PublicKey, developer: PublicKey): number {
@@ -148,7 +142,7 @@ async function assertDeveloperFundedWsol(parsed: ParsedTransaction, developer: P
   if (info.source !== developer.toBase58() || info.base !== developer.toBase58() || info.newAccount !== wsolUserVault.toBase58()) throw new Error("WSOL account creation is not controlled by the graduation developer");
   if (typeof info.seed !== "string" || info.seed.length > 32) throw new Error("WSOL account creation has an invalid seed");
   if (info.space !== TOKEN_ACCOUNT_LEN || info.owner !== TOKEN_PROGRAM) throw new Error("Developer-funded WSOL account has invalid SPL Token account parameters");
-  if (!(await PublicKey.createWithSeed(developer, info.seed, new PublicKey(TOKEN_PROGRAM))).equals(wsolUserVault)) throw new Error("WSOL funding account is not the canonical developer-derived account");
+  if (!(await PublicKey.createWithSeed(developer, info.seed, TOKEN_PROGRAM_ID)).equals(wsolUserVault)) throw new Error("WSOL funding account is not the canonical developer-derived account");
 
   const rent = await connection.getMinimumBalanceForRentExemption(TOKEN_ACCOUNT_LEN, "confirmed");
   const createdLamports = BigInt(String(info.lamports ?? 0));
