@@ -28,6 +28,11 @@ fn fee_never_exceeds_gross_amount() {
 }
 
 #[test]
+fn fee_rejects_multiplication_overflow() {
+    assert!(fee(u64::MAX).is_err());
+}
+
+#[test]
 fn buy_quote_reduces_virtual_token_reserve() {
     let vs = INITIAL_VIRTUAL_SOL_RESERVE;
     let vt = TOTAL_SUPPLY_BASE_UNITS;
@@ -43,6 +48,16 @@ fn buy_quote_is_monotonic_for_larger_buys() {
     let small = buy_quote(100_000_000, vs, vt).expect("small quote");
     let large = buy_quote(200_000_000, vs, vt).expect("large quote");
     assert!(large > small);
+}
+
+#[test]
+fn buy_quote_rejects_k_overflow() {
+    assert!(buy_quote(u64::MAX, u64::MAX, u64::MAX).is_err());
+}
+
+#[test]
+fn sell_quote_rejects_zero_input() {
+    assert!(sell_quote(0, INITIAL_VIRTUAL_SOL_RESERVE, TOTAL_SUPPLY_BASE_UNITS).is_err());
 }
 
 #[test]
