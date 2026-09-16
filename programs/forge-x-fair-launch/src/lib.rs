@@ -48,7 +48,7 @@ struct State {
 impl State {
     const LEN: usize = 114;
     fn pack(&self, data: &mut [u8]) -> Result<(), ProgramError> {
-        if data.len() < Self::LEN { return Err(ProgramError::AccountDataTooSmall); }
+        if data.len() != Self::LEN { return Err(ProgramError::AccountDataTooSmall); }
         data[0] = STATE_VERSION;
         data[1..33].copy_from_slice(self.developer.as_ref());
         data[33] = self.status;
@@ -62,7 +62,7 @@ impl State {
         Ok(())
     }
     fn unpack(data: &[u8]) -> Result<Self, ProgramError> {
-        if data.len() < Self::LEN || data[0] != STATE_VERSION { return Err(ProgramError::InvalidAccountData); }
+        if data.len() != Self::LEN || data[0] != STATE_VERSION { return Err(ProgramError::InvalidAccountData); }
         Ok(Self {
             developer: Pubkey::new_from_array(data[1..33].try_into().map_err(|_| ProgramError::InvalidAccountData)?),
             status: data[33],
@@ -113,7 +113,7 @@ where I: Iterator<Item = &'a AccountInfo<'a>> {
         let rent = Rent::get()?.minimum_balance(State::LEN);
         invoke_signed(&system_instruction::create_account(developer.key, state_account.key, rent, State::LEN as u64, program_id), &[developer.clone(), state_account.clone(), system.clone()], &[&[STATE_SEED, mint_account.key.as_ref(), &[bump]]])?;
     }
-    if state_account.owner != program_id || state_account.data_len() < State::LEN { return Err(ProgramError::InvalidAccountData); }
+    if state_account.owner != program_id || state_account.data_len() != State::LEN { return Err(ProgramError::InvalidAccountData); }
     if state_account.try_borrow_data()?[0] != 0 { return Err(ProgramError::AccountAlreadyInitialized); }
     let state = State { developer: *developer.key, status: STATUS_WAITING_FOR_DEV_BUY, developer_bought_lamports: 0, real_sol_raised: 0, virtual_sol_reserve: INITIAL_VIRTUAL_SOL_RESERVE, virtual_token_reserve: TOTAL_SUPPLY_BASE_UNITS, graduation_sol, created_at: Clock::get()?.unix_timestamp, fee_receiver: *fee_receiver.key };
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
