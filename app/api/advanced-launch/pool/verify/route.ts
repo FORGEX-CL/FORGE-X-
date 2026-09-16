@@ -11,7 +11,6 @@ const DEVNET_CPMM = new PublicKey("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY")
 const CPMM_CREATE_POOL_DISCRIMINATOR = Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]);
 
 type ConfirmedTransaction = NonNullable<Awaited<ReturnType<Connection["getTransaction"]>>>;
-type CompiledInstruction = { accountKeyIndexes: readonly number[]; programIdIndex: number; data: string };
 
 function key(value: string | null, field: string): PublicKey {
   if (!value?.trim()) throw new Error(`${field} is required`);
@@ -100,7 +99,7 @@ export async function GET(request: NextRequest) {
     const mintA = typeof info.mintA === "string" ? info.mintA : info.mintA?.address;
     const mintB = typeof info.mintB === "string" ? info.mintB : info.mintB?.address;
     if (!mintA || !mintB) throw new Error("Raydium CPMM pool mint information is incomplete");
-    if (!mintA || !mintB || !((mintA === mint.toBase58() && mintB === WSOL.toBase58()) || (mintB === mint.toBase58() && mintA === WSOL.toBase58()))) {
+    if (!((mintA === mint.toBase58() && mintB === WSOL.toBase58()) || (mintB === mint.toBase58() && mintA === WSOL.toBase58()))) {
       throw new Error("Verified pool mints do not exactly match the requested token and canonical WSOL");
     }
 
