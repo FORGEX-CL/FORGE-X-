@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Raydium } from "@raydium-io/raydium-sdk-v2";
-import { RAYDIUM_CPMM_PROGRAM_ID, SOLANA_RPC_URL } from "../../../../../../lib/solana-client-config";
+import { RAYDIUM_CPMM_PROGRAM_ID, SOLANA_CLUSTER, SOLANA_RPC_URL } from "../../../../../../lib/solana-client-config";
 
 const WSOL = new PublicKey("So11111111111111111111111111111111111111112");
 
@@ -37,10 +37,9 @@ export async function GET(request: NextRequest) {
       return bad("Pool account is not owned by the configured Raydium CPMM program");
     }
 
-    const raydium = await Raydium.load({ owner: wallet, connection, cluster: process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet" });
+    const raydium = await Raydium.load({ owner: wallet, connection, cluster: SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet" });
     const pool = await raydium.cpmm.getPoolInfoFromRpc(poolId.toBase58());
     const poolInfo = pool.poolInfo;
-    const poolKeys = pool.poolKeys;
 
     if (poolInfo.programId !== RAYDIUM_CPMM_PROGRAM_ID) return bad("Raydium returned an unexpected CPMM program");
     const mintA = new PublicKey(poolInfo.mintA.address);
@@ -56,22 +55,44 @@ export async function GET(request: NextRequest) {
 
     const accounts = await connection.getParsedTokenAccountsByOwner(wallet, { mint: lpMint }, "confirmed");
     let walletLpBalance = 0n;
+    let lpDecimals: number | undefined;
     for (const account of accounts.value) {
-      const parsed = account.account.data.parsed?.info?.tokenAmount?.amount;
-      if (typeof parsed === "string" && /^\d+$/.test(parsed)) walletLpBalance += BigInt(parsed);
+      const tokenAmount = account.account.data.parsed?.info?.tokenAmount;
+      if (typeof tokenAmount?.amount === "string" && /^\d+$/.test(tokenAmount.amount)) walletLpBalance += BigInt(tokenAmount.amount);
+      if (typeof tokenAmount?.decimals === "number") lpDecimals = tokenAmount.decimals;
     }
 
-    const decimals = accounts.value[0]?.account.data.parsed?.info?.tokenAmount?.decimals;
-    if (typeof decimals !== "number") {
+    if (lpDecimals === undefined) {
       const mintInfo = await connection.getParsedAccountInfo(lpMint, "confirmed");
       const parsed = mintInfo.value?.data;
       if (!parsed || !("parsed" in parsed)) return bad("Unable to read CPMM LP mint decimals");
-      const mintDecimals = (parsed as { parsed: { info: { decimals?: number } } }).parsed.info.decimals;
-      if (typeof mintDecimals !== "number") return bad("Unable to read CPMM LP mint decimals");
-      return NextResponse.json({ verified: true, wallet: wallet.toBase58(), mint: mint.toBase58(), poolId: poolId.toBase58(), lpMint: lpMint.toBase58(), lpDecimals: mintDecimals, walletLpBalance: walletLpBalance.toString(), walletLpBalanceUi: Number(walletLpBalance) / 10 ** mintDecimals, vaultA: poolKeys.vault.A.toBase58(), vaultB: poolKeys.vault.B.toBase58() });
+      const decimals = (parsed as { parsed: { info: { decimals?: number } } }).parsed.info.decimals;
+      if (typeof decimals !== "number") return bad("Unable to read CPMM LP mint decimals");
+      lpDecimals = decimals;
     }
 
-    return NextResponse.json({ verified: true, wallet: wallet.toBase58(), mint: mint.toBase58(), poolId: poolId.toBase58(), lpMint: lpMint.toBase58(), lpDecimals: decimals, walletLpBalance: walletLpBalance.toString(), walletLpBalanceUi: Number(walletLpBalance) / 10 ** decimals, vaultA: poolKeys.vault.A.toBase58(), vaultB: poolKeys.vault.B.toBase58() });
+    const rpcData = pool.rpcData;
+    const vaultA = new PublicKey(pool.poolKeys.vault.A);
+    const vaultB = new PublicKey(pool.poolKeys.vault.B);
+    const vaultAccounts = await connection.getMultipleAccountsInfo([vaultA, vaultB], "confirmed");
+    if (!vaultAccounts[0] || !vaultAccounts[1]) return bad("CPMM vault accounts could not be read");
+
+    return NextResponse.json({
+      verified: true,
+      wallet: wallet.toBase58(),
+      mint: mint.toBase58(),
+      poolId: poolId.toBase58(),
+      lpMint: lpMint.toBase58(),
+      lpDecimals,
+      walletLpBalance: walletLpBalance.toString(),
+      walletLpBalanceUi: Number(walletLpBalance) / 10 ** lpDecimals,
+      vaultA: vaultA.toBase58(),
+      vaultB: vaultB.toBase58(),
+      liveLiquidity: {
+        vaultA: rpcData.baseReserve?.toString?.() ?? null,
+        vaultB: rpcData.quoteReserve?.toString?.() ?? null,
+      },
+    });
   } catch (error) {
     return bad(error instanceof Error ? error.message : "Unable to verify the Raydium CPMM LP position", 502);
   }
