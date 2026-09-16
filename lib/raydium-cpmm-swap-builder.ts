@@ -1,6 +1,9 @@
 import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import BN from "bn.js";
 import {
+  ApiV3PoolInfoStandardItemCpmm,
+  CpmmKeys,
+  CpmmParsedRpcData,
   CREATE_CPMM_POOL_PROGRAM,
   CurveCalculator,
   DEVNET_PROGRAM_ID,
@@ -8,6 +11,7 @@ import {
   Raydium,
   TxVersion,
 } from "@raydium-io/raydium-sdk-v2";
+import { SOLANA_CLUSTER } from "@/lib/solana-client-config";
 
 export type PrepareRaydiumCpmmSwapInput = {
   connection: Connection;
@@ -31,8 +35,8 @@ export type PreparedRaydiumCpmmSwap = {
   lastValidBlockHeight: number;
 };
 
-function cluster() {
-  return process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet" : "devnet";
+function cluster(): "mainnet" | "devnet" {
+  return SOLANA_CLUSTER === "mainnet-beta" ? "mainnet" : "devnet";
 }
 
 function positiveSlippage(value: number) {
@@ -54,17 +58,17 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
     cluster: network,
   });
 
-  let poolInfo: Awaited<ReturnType<typeof raydium.cpmm.getPoolInfoFromRpc>>["poolInfo"];
-  let poolKeys: Awaited<ReturnType<typeof raydium.cpmm.getPoolInfoFromRpc>>["poolKeys"] | undefined;
-  let rpcData: Awaited<ReturnType<typeof raydium.cpmm.getPoolInfoFromRpc>>["rpcData"];
+  let poolInfo: ApiV3PoolInfoStandardItemCpmm;
+  let poolKeys: CpmmKeys | undefined;
+  let rpcData: CpmmParsedRpcData;
 
   if (network === "mainnet") {
     const response = await raydium.api.fetchPoolById({ ids: input.poolId.toBase58() });
-    const candidate = response[0];
+    const candidate = response[0] as ApiV3PoolInfoStandardItemCpmm | undefined;
     if (!candidate || candidate.programId !== expectedProgram.toBase58()) {
       throw new Error("Pool is not a verified Raydium CPMM pool");
     }
-    poolInfo = candidate as typeof poolInfo;
+    poolInfo = candidate;
     rpcData = await raydium.cpmm.getRpcPoolInfo(input.poolId.toBase58(), true);
   } else {
     const rpcPool = await raydium.cpmm.getPoolInfoFromRpc(input.poolId.toBase58());
@@ -122,9 +126,6 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
     txVersion: TxVersion.V0,
   });
 
-  // Raydium builds a valid transaction, but the user may spend time in the wallet UI.
-  // Refresh the blockhash immediately before the transaction leaves the server so the
-  // signing window starts with a fresh lifetime and the client can track exact expiry.
   const latest = await input.connection.getLatestBlockhash("confirmed");
   transaction.message.recentBlockhash = latest.blockhash;
 
