@@ -1,10 +1,11 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { FairLaunchTrader } from "./FairLaunchTrader";
 import { RaydiumCpmmTrader } from "./RaydiumCpmmTrader";
 
-export function TradeMode() {
+function TradeModeContent() {
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode") || "fair";
   const pool = searchParams.get("pool") || "";
@@ -18,4 +19,18 @@ export function TradeMode() {
   }
 
   return <FairLaunchTrader />;
+}
+
+export function TradeMode() {
+  return (
+    <Suspense
+      fallback={
+        <div className="rounded-2xl border border-white/10 bg-white/[.025] p-6 text-sm text-white/40">
+          Loading trade route…
+        </div>
+      }
+    >
+      <TradeModeContent />
+    </Suspense>
+  );
 }
