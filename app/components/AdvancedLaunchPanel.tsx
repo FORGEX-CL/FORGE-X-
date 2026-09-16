@@ -86,7 +86,7 @@ export function AdvancedLaunchPanel() {
   async function executePoolCreation() {
     const wallet = getWallet();
     if (!wallet?.publicKey || !wallet.signTransaction || !mint || !tokenVerified) { setError("Create and verify the token before creating its pool."); return; }
-    setError(""); setStatus("preparing");
+    setError(""); setPoolVerified(false); setStatus("preparing");
     try {
       const tokenBaseUnits = BigInt(initialTokens) * 1_000_000_000n;
       const solLamports = parseDecimalToUnits(initialSol, 9);
@@ -102,8 +102,13 @@ export function AdvancedLaunchPanel() {
       const connection = new Connection(RPC, "confirmed");
       const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
       setPoolSignature(txid); await waitForConfirmation(connection, txid);
-      const poolAccount = await connection.getAccountInfo(new PublicKey(data.poolId), "confirmed");
-      if (!poolAccount || !poolAccount.owner.equals(new PublicKey(data.programId))) throw new Error("Pool transaction confirmed, but the pool account owner could not be verified");
+
+      const verificationParams = new URLSearchParams({ wallet: wallet.publicKey.toString(), mint, poolId: data.poolId, signature: txid, tokenBaseUnits: tokenBaseUnits.toString(), solLamports: solLamports.toString() });
+      const verificationResponse = await fetch(`/api/advanced-launch/pool/verify?${verificationParams.toString()}`, { method: "GET", cache: "no-store" });
+      const verification = await verificationResponse.json() as { verified?: boolean; error?: string; poolId?: string; mint?: string; signature?: string };
+      if (!verificationResponse.ok || verification.verified !== true || verification.poolId !== data.poolId || verification.mint !== mint || verification.signature !== txid) {
+        throw new Error(verification.error || "Pool transaction confirmed, but server-side on-chain verification failed");
+      }
       setPoolVerified(true); setStatus("verified");
     } catch (e) { setStatus("failed"); setError(e instanceof Error ? e.message : "Pool creation failed"); }
   }
