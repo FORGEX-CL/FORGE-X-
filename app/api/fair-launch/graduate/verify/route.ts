@@ -47,17 +47,55 @@ function accountKeys(transaction: ConfirmedTransaction): PublicKey[] {
   return [...staticKeys, ...(loaded?.writable ?? []), ...(loaded?.readonly ?? [])];
 }
 
-function instructionTouches(instruction: CompiledInstruction, keys: readonly PublicKey[], programId: PublicKey, requiredAccounts: PublicKey[]): boolean {
+function exactMigrationInstruction(
+  instruction: CompiledInstruction,
+  keys: readonly PublicKey[],
+  programId: PublicKey,
+  state: PublicKey,
+  mint: PublicKey,
+  developer: PublicKey,
+): boolean {
   if (!keys[instruction.programIdIndex]?.equals(programId)) return false;
-  const accounts = new Set(instruction.accountKeyIndexes.map((index) => keys[index]?.toBase58()));
-  return requiredAccounts.every((account) => accounts.has(account.toBase58()));
+  if (instruction.data.length !== 1 || instruction.data[0] !== 4) return false;
+  if (instruction.accountKeyIndexes.length !== 7) return false;
+  const ixKeys = instruction.accountKeyIndexes.map((index) => keys[index]);
+  if (ixKeys.some((account) => !account)) return false;
+  return ixKeys[0].equals(state)
+    && ixKeys[1].equals(mint)
+    && ixKeys[2].equals(developer)
+    && ixKeys[3].equals(fairLaunchVaultAta(mint, programId))
+    && ixKeys[4].equals(getAssociatedTokenAddressSync(mint, developer))
+    && ixKeys[5].equals(new PublicKey("11111111111111111111111111111111"))
+    && ixKeys[6].equals(new PublicKey(TOKEN_PROGRAM));
+}
+
+function fairLaunchVaultAta(mint: PublicKey, programId: PublicKey): PublicKey {
+  const [vault] = PublicKey.findProgramAddressSync([Buffer.from("vault"), mint.toBuffer()], programId);
+  return vault;
+}
+
+function getAssociatedTokenAddressSync(mint: PublicKey, owner: PublicKey): PublicKey {
+  const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), new PublicKey(TOKEN_PROGRAM).toBuffer(), mint.toBuffer()],
+    ASSOCIATED_TOKEN_PROGRAM,
+  );
+  return ata;
 }
 
 function findMigrationIndex(transaction: ConfirmedTransaction, programId: PublicKey, state: PublicKey, mint: PublicKey, developer: PublicKey): number {
   const keys = accountKeys(transaction);
-  return transaction.transaction.message.compiledInstructions.findIndex((instruction) =>
-    instruction.data.length === 1 && instruction.data[0] === 5 && instructionTouches(instruction, keys, programId, [state, mint, developer]),
-  );
+  const matches = transaction.transaction.message.compiledInstructions
+    .map((instruction, index) => ({ instruction, index }))
+    .filter(({ instruction }) => exactMigrationInstruction(instruction, keys, programId, state, mint, developer));
+  if (matches.length !== 1) throw new Error("Submitted transaction must contain exactly one expected Fair Launch migration instruction");
+  return matches[0].index;
+}
+
+function instructionTouches(instruction: CompiledInstruction, keys: readonly PublicKey[], programId: PublicKey, requiredAccounts: PublicKey[]): boolean {
+  if (!keys[instruction.programIdIndex]?.equals(programId)) return false;
+  const accounts = new Set(instruction.accountKeyIndexes.map((index) => keys[index]?.toBase58()));
+  return requiredAccounts.every((account) => accounts.has(account.toBase58()));
 }
 
 function findPoolInstruction(transaction: ConfirmedTransaction, cpmmProgram: PublicKey, poolId: PublicKey, mint: PublicKey, developer: PublicKey, solLamports: bigint, tokenBaseUnits: bigint): PoolInstructionCheck {
@@ -145,7 +183,6 @@ export async function GET(request: NextRequest) {
     if (!parsedTransaction || parsedTransaction.meta?.err) throw new Error("Unable to parse the confirmed graduation transaction");
 
     const migrationIndex = findMigrationIndex(transaction, programId, state, mint, developer);
-    if (migrationIndex < 0) throw new Error("Submitted transaction does not contain the expected Fair Launch migration instruction");
 
     const stateInfo = await connection.getAccountInfo(state, "confirmed");
     if (!stateInfo || stateInfo.data.length !== STATE_LEN || !stateInfo.owner.equals(programId)) throw new Error("Fair Launch state is missing, has an invalid layout, or is owned by the wrong program");
