@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { Raydium } from "@raydium-io/raydium-sdk-v2";
-import bs58 from "bs58";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet";
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
@@ -49,7 +48,7 @@ function findCreatePoolInstruction(
 
   if (matches.length !== 1) throw new Error("Submitted transaction must contain exactly one Raydium CPMM pool-creation instruction");
   const { instruction } = matches[0];
-  const data = Buffer.from(bs58.decode(instruction.data));
+  const data = Buffer.from(instruction.data);
   if (data.length !== 32 || !data.subarray(0, 8).equals(CPMM_CREATE_POOL_DISCRIMINATOR)) throw new Error("Submitted transaction contains an unexpected Raydium CPMM instruction");
 
   const ixKeys = instruction.accountKeyIndexes.map((index) => keys[index]);
