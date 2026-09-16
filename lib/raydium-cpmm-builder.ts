@@ -139,20 +139,3 @@ export async function prepareRaydiumCpmmPool(input: {
     solLamports: input.solLamports,
   };
 }
-
-/**
- * Returns normalized inputs for callers that only need validation metadata.
- * Transaction construction is performed by prepareRaydiumCpmmPool at runtime.
- */
-export function prepareCpmmPoolInputs(input: CpmmPoolInputs) {
-  validateCpmmPoolInputs(input);
-  return {
-    owner: input.owner,
-    mintA: input.mintA,
-    mintB: input.mintB,
-    mintAAmount: input.amountA,
-    mintBAmount: input.amountB,
-    requiresWalletSignature: true as const,
-    cluster: "devnet" as const,
-  };
-}
