@@ -51,8 +51,10 @@ fn buy_quote_is_monotonic_for_larger_buys() {
 }
 
 #[test]
-fn buy_quote_rejects_k_overflow() {
-    assert!(buy_quote(u64::MAX, u64::MAX, u64::MAX).is_err());
+fn buy_quote_handles_maximum_u64_inputs() {
+    let out = buy_quote(u64::MAX, u64::MAX, u64::MAX).expect("maximum quote fits u128 arithmetic");
+    assert!(out > 0);
+    assert!(out < u64::MAX);
 }
 
 #[test]
