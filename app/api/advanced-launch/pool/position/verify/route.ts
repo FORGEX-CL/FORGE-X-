@@ -71,7 +71,6 @@ export async function GET(request: NextRequest) {
       lpDecimals = decimals;
     }
 
-    const rpcData = pool.rpcData;
     const vaultA = new PublicKey(pool.poolKeys.vault.A);
     const vaultB = new PublicKey(pool.poolKeys.vault.B);
     const vaultAccounts = await connection.getMultipleAccountsInfo([vaultA, vaultB], "confirmed");
@@ -88,10 +87,7 @@ export async function GET(request: NextRequest) {
       walletLpBalanceUi: Number(walletLpBalance) / 10 ** lpDecimals,
       vaultA: vaultA.toBase58(),
       vaultB: vaultB.toBase58(),
-      liveLiquidity: {
-        vaultA: rpcData.baseReserve?.toString?.() ?? null,
-        vaultB: rpcData.quoteReserve?.toString?.() ?? null,
-      },
+      hasLiveVaultAccounts: true,
     });
   } catch (error) {
     return bad(error instanceof Error ? error.message : "Unable to verify the Raydium CPMM LP position", 502);
