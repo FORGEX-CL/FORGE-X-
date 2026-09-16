@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { prepareRaydiumCpmmSwap } from "@/lib/raydium-cpmm-swap-builder";
-
-const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet";
-const RPC = CLUSTER === "mainnet-beta"
-  ? process.env.SOLANA_RPC_URL || ""
-  : process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
+import { SOLANA_CLUSTER, SOLANA_RPC_URL } from "@/lib/solana-client-config";
 
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
@@ -32,14 +28,13 @@ function slippage(value: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!RPC) throw new Error("A dedicated mainnet SOLANA_RPC_URL is required for Raydium trading");
     const body = await request.json();
     const trader = key(body.trader, "trader");
     const poolId = key(body.poolId, "poolId");
     const inputMint = key(body.inputMint, "inputMint");
     const inputAmount = amount(body.amount);
     const prepared = await prepareRaydiumCpmmSwap({
-      connection: new Connection(RPC, "confirmed"),
+      connection: new Connection(SOLANA_RPC_URL, "confirmed"),
       trader,
       poolId,
       inputMint,
@@ -59,7 +54,7 @@ export async function POST(request: NextRequest) {
       minimumOutputAmount: prepared.minimumOutputAmount.toString(),
       tradeFee: prepared.tradeFee.toString(),
       programId: prepared.programId.toBase58(),
-      cluster: CLUSTER,
+      cluster: SOLANA_CLUSTER,
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare Raydium swap" }, { status: 400 });
