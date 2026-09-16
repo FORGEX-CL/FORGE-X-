@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { AccountLayout, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Raydium } from "@raydium-io/raydium-sdk-v2";
 import { RAYDIUM_CPMM_PROGRAM_ID, SOLANA_CLUSTER, SOLANA_RPC_URL } from "../../../../../../lib/solana-client-config";
 
@@ -75,6 +75,18 @@ export async function GET(request: NextRequest) {
     const vaultB = new PublicKey(pool.poolKeys.vault.B);
     const vaultAccounts = await connection.getMultipleAccountsInfo([vaultA, vaultB], "confirmed");
     if (!vaultAccounts[0] || !vaultAccounts[1]) return bad("CPMM vault accounts could not be read");
+    if (!vaultAccounts[0].owner.equals(TOKEN_PROGRAM_ID) || !vaultAccounts[1].owner.equals(TOKEN_PROGRAM_ID)) {
+      return bad("CPMM vault accounts are not owned by the legacy SPL Token program");
+    }
+    if (vaultAccounts[0].data.length !== AccountLayout.span || vaultAccounts[1].data.length !== AccountLayout.span) {
+      return bad("CPMM vault accounts have an unexpected SPL Token account layout");
+    }
+
+    const decodedVaultA = AccountLayout.decode(vaultAccounts[0].data);
+    const decodedVaultB = AccountLayout.decode(vaultAccounts[1].data);
+    if (!decodedVaultA.mint.equals(mintA) || !decodedVaultB.mint.equals(mintB)) {
+      return bad("CPMM vault mints do not match the verified pool mint pair");
+    }
 
     return NextResponse.json({
       verified: true,
