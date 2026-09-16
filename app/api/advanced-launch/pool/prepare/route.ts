@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { prepareRaydiumCpmmPool } from "@/lib/raydium-cpmm-builder";
-
-const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "devnet" ? "devnet" : "mainnet-beta";
-const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com");
+import { SOLANA_CLUSTER, SOLANA_RPC_URL } from "@/lib/solana-client-config";
 
 function parsePublicKey(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
@@ -27,7 +25,7 @@ export async function POST(request: NextRequest) {
     const tokenBaseUnits = parsePositiveInteger(body.tokenBaseUnits, "tokenBaseUnits");
     const solLamports = parsePositiveInteger(body.solLamports, "solLamports");
 
-    const connection = new Connection(RPC, "confirmed");
+    const connection = new Connection(SOLANA_RPC_URL, "confirmed");
     const prepared = await prepareRaydiumCpmmPool({ connection, wallet, mint, tokenBaseUnits, solLamports });
 
     return NextResponse.json({
@@ -37,7 +35,7 @@ export async function POST(request: NextRequest) {
       mint: prepared.mint.toBase58(),
       tokenBaseUnits: prepared.tokenBaseUnits.toString(),
       solLamports: prepared.solLamports.toString(),
-      cluster: CLUSTER,
+      cluster: SOLANA_CLUSTER,
       requiresWalletSignature: true,
       simulated: true,
     });
