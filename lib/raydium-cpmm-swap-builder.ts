@@ -295,6 +295,15 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
     poolKeys,
   );
 
+  const simulation = await input.connection.simulateTransaction(transaction, {
+    commitment: "confirmed",
+    sigVerify: false,
+    replaceRecentBlockhash: true,
+  });
+  if (simulation.value.err) {
+    throw new Error(`Raydium CPMM swap simulation failed: ${JSON.stringify(simulation.value.err)}`);
+  }
+
   return {
     transaction,
     poolId: input.poolId,
