@@ -8,8 +8,8 @@ import {
   CurveCalculator,
   DEVNET_PROGRAM_ID,
   FeeOn,
-  getPdaPoolAuthority,
   getPdaObservationId,
+  getPdaPoolAuthority,
   Raydium,
   TxVersion,
 } from "@raydium-io/raydium-sdk-v2";
@@ -59,9 +59,8 @@ async function resolveTransactionAccountKeys(
     throw new Error("Raydium CPMM swap must use a V0 transaction");
   }
 
-  const lookups = transaction.message.addressTableLookups;
   const lookupAccounts: AddressLookupTableAccount[] = [];
-  for (const lookup of lookups) {
+  for (const lookup of transaction.message.addressTableLookups) {
     const result = await connection.getAddressLookupTable(lookup.accountKey, "confirmed");
     if (!result.value) {
       throw new Error(`Address lookup table is unavailable: ${lookup.accountKey.toBase58()}`);
@@ -92,6 +91,7 @@ async function auditSerializedSwap(
   outputMint: PublicKey,
   inputAmount: bigint,
   minimumOutputAmount: bigint,
+  poolInfo: ApiV3PoolInfoStandardItemCpmm,
   poolKeys: CpmmKeys,
 ): Promise<void> {
   const accountKeys = await resolveTransactionAccountKeys(connection, transaction);
@@ -123,46 +123,44 @@ async function auditSerializedSwap(
   if (keys.some((key) => !key)) {
     throw new Error("Serialized swap contains an unresolved account key");
   }
+  if (keys.length !== 13) {
+    throw new Error("Serialized Raydium CPMM swap has unexpected account count");
+  }
 
-  const expectedAccounts = [
+  const mintA = new PublicKey(poolInfo.mintA.address);
+  const mintB = new PublicKey(poolInfo.mintB.address);
+  const inputVault = inputMint.equals(mintA) ? new PublicKey(poolKeys.vault.A) : new PublicKey(poolKeys.vault.B);
+  const outputVault = inputMint.equals(mintA) ? new PublicKey(poolKeys.vault.B) : new PublicKey(poolKeys.vault.A);
+  const inputTokenProgram = new PublicKey(inputMint.equals(mintA) ? poolInfo.mintA.programId : poolInfo.mintB.programId);
+  const outputTokenProgram = new PublicKey(outputMint.equals(mintA) ? poolInfo.mintA.programId : poolInfo.mintB.programId);
+
+  const expected = [
     trader,
     getPdaPoolAuthority(expectedProgram).publicKey,
     new PublicKey(poolKeys.config.id),
     poolId,
+    undefined,
+    undefined,
+    inputVault,
+    outputVault,
+    inputTokenProgram,
+    outputTokenProgram,
     inputMint,
     outputMint,
-    inputMint.equals(new PublicKey(poolKeys.mintA)) ? new PublicKey(poolKeys.vault.A) : new PublicKey(poolKeys.vault.B),
-    inputMint.equals(new PublicKey(poolKeys.mintA)) ? new PublicKey(poolKeys.vault.B) : new PublicKey(poolKeys.vault.A),
-    new PublicKey(poolKeys.mintA),
-    new PublicKey(poolKeys.mintB),
     getPdaObservationId(expectedProgram, poolId).publicKey,
   ];
 
-  if (keys.length < 13) {
-    throw new Error("Serialized Raydium CPMM swap has too few accounts");
-  }
-
-  const expectedFixedIndexes = [0, 1, 2, 3, 8, 9, 12];
-  const expectedFixedAccounts = [
-    expectedAccounts[0],
-    expectedAccounts[1],
-    expectedAccounts[2],
-    expectedAccounts[3],
-    expectedAccounts[8],
-    expectedAccounts[9],
-    expectedAccounts[10],
-  ];
-  expectedFixedIndexes.forEach((accountIndex, expectedIndex) => {
-    if (!keys[accountIndex].equals(expectedFixedAccounts[expectedIndex])) {
-      throw new Error(`Serialized Raydium CPMM swap account ${accountIndex} is not the expected account`);
+  for (const index of [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12]) {
+    if (!keys[index].equals(expected[index]!)) {
+      throw new Error(`Serialized Raydium CPMM swap account ${index} does not match the verified pool wiring`);
     }
-  });
-
-  if (!keys[4].equals(expectedAccounts[4]) || !keys[5].equals(expectedAccounts[5])) {
-    throw new Error("Serialized swap user token accounts are in an unexpected position");
   }
-  if (keys[6].equals(keys[7]) || !keys[6].equals(expectedAccounts[6]) || !keys[7].equals(expectedAccounts[7])) {
-    throw new Error("Serialized swap vault wiring does not match the selected input direction");
+
+  if (keys[4].equals(inputVault) || keys[4].equals(outputVault) || keys[5].equals(inputVault) || keys[5].equals(outputVault)) {
+    throw new Error("Serialized swap user accounts must not be pool vaults");
+  }
+  if (keys[4].equals(keys[5])) {
+    throw new Error("Serialized swap input and output accounts must be different");
   }
 }
 
@@ -252,6 +250,7 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
     outputMint,
     input.inputAmount,
     minimumOutputAmount,
+    poolInfo,
     poolKeys,
   );
 
