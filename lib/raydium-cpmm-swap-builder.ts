@@ -90,7 +90,16 @@ async function verifyUserTokenAccount(
   role: "input" | "output",
 ): Promise<void> {
   const account = await connection.getParsedAccountInfo(accountKey, "confirmed");
-  if (!account.value || !account.value.owner.equals(expectedProgram)) {
+  if (!account.value) {
+    if (role === "output") {
+      // Raydium can include output-account creation in the same transaction. The
+      // subsequent RPC simulation is the final execution check for that path.
+      return;
+    }
+    throw new Error(`Serialized swap ${role} account does not exist`);
+  }
+
+  if (!account.value.owner.equals(expectedProgram)) {
     throw new Error(`Serialized swap ${role} account is not owned by its verified token program`);
   }
 
