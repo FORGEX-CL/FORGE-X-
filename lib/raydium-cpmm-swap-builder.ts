@@ -51,6 +51,11 @@ function positiveSlippage(value: number) {
   return value;
 }
 
+function minimumOutputForSlippage(outputAmount: bigint, slippage: number): bigint {
+  const sdkSlippageBps = Math.floor((1 - slippage) * 10_000);
+  return (outputAmount * BigInt(sdkSlippageBps)) / 10_000n;
+}
+
 async function resolveTransactionAccountKeys(
   connection: Connection,
   transaction: VersionedTransaction,
@@ -223,9 +228,7 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
   const tradeFee = BigInt(swapResult.tradeFee.toString());
   if (outputAmount <= 0n) throw new Error("Swap output is zero");
 
-  const minimumOutputAmount = BigInt(
-    new BN(outputAmount.toString()).mul(new BN(Math.round((1 - slippage) * 1_000_000))).div(new BN(1_000_000)).toString(),
-  );
+  const minimumOutputAmount = minimumOutputForSlippage(outputAmount, slippage);
 
   const { transaction } = await raydium.cpmm.swap({
     poolInfo,
