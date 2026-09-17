@@ -3,6 +3,9 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { prepareRaydiumCpmmSwap } from "@/lib/raydium-cpmm-swap-builder";
 import { SOLANA_CLUSTER, SOLANA_RPC_URL } from "@/lib/solana-client-config";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 function key(value: unknown, field: string): PublicKey {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
   try { return new PublicKey(value); } catch { throw new Error(`${field} is invalid`); }
@@ -55,8 +58,13 @@ export async function POST(request: NextRequest) {
       tradeFee: prepared.tradeFee.toString(),
       programId: prepared.programId.toBase58(),
       cluster: SOLANA_CLUSTER,
+    }, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare Raydium swap" }, { status: 400 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to prepare Raydium swap" },
+      { status: 400, headers: { "Cache-Control": "no-store, max-age=0" } },
+    );
   }
 }
