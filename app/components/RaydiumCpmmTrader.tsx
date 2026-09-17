@@ -10,9 +10,15 @@ const WSOL = "So11111111111111111111111111111111111111112";
 const MAINNET_CPMM_PROGRAM = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
 const DEVNET_CPMM_PROGRAM = "DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpY";
 const EXPECTED_CPMM_PROGRAM = CLUSTER === "mainnet-beta" ? MAINNET_CPMM_PROGRAM : DEVNET_CPMM_PROGRAM;
+const SPL_TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+const ASSOCIATED_TOKEN_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
 const POLL_MS = 500;
 const TIMEOUT_MS = 90_000;
 const MAX_SLIPPAGE_PERCENT = 5;
+const SWAP_BASE_INPUT_DISCRIMINATOR = [143, 190, 90, 218, 196, 30, 51, 222];
 
 type MintInfo = { address: string; symbol: string | null; decimals: number | null };
 type PoolResponse = { pools?: Array<{ id: string; mintA: string | null; mintB: string | null; symbolA: string | null; symbolB: string | null; decimalsA: number | null; decimalsB: number | null; price: number | null }>; error?: string };
@@ -38,6 +44,32 @@ function formatUnits(raw: string, decimals: number): string {
   const value = BigInt(raw); const unit = 10n ** BigInt(decimals); const whole = value / unit;
   const fraction = (value % unit).toString().padStart(decimals, "0").replace(/0+$/, "");
   return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+function readU64(data: Uint8Array, offset: number): bigint {
+  let value = 0n;
+  for (let i = 0; i < 8; i += 1) value |= BigInt(data[offset + i] || 0) << BigInt(i * 8);
+  return value;
+}
+function auditClientTransaction(transaction: VersionedTransaction, expectedInputAmount: bigint, expectedMinimumOutput: bigint, payer: string) {
+  if (transaction.message.version !== 0) throw new Error("Prepared swap is not a V0 transaction.");
+  if (transaction.message.staticAccountKeys[0]?.toBase58() !== payer) throw new Error("Prepared swap wallet does not match the connected wallet.");
+
+  const programs = transaction.message.compiledInstructions.map((instruction) => transaction.message.staticAccountKeys[instruction.programIdIndex]?.toBase58()).filter(Boolean) as string[];
+  const allowedPrograms = new Set([EXPECTED_CPMM_PROGRAM, SPL_TOKEN_PROGRAM, TOKEN_2022_PROGRAM, ASSOCIATED_TOKEN_PROGRAM, SYSTEM_PROGRAM, COMPUTE_BUDGET_PROGRAM]);
+  if (programs.some((program) => !allowedPrograms.has(program))) throw new Error("Prepared swap contains an unexpected program instruction.");
+
+  const cpmm = transaction.message.compiledInstructions.filter(
+    (instruction) => transaction.message.staticAccountKeys[instruction.programIdIndex]?.toBase58() === EXPECTED_CPMM_PROGRAM,
+  );
+  if (cpmm.length !== 1) throw new Error("Prepared swap must contain exactly one Raydium CPMM instruction.");
+  const instruction = cpmm[0];
+  if (instruction.accountKeyIndexes.length !== 13) throw new Error("Prepared swap has unexpected Raydium account wiring.");
+  if (instruction.data.length !== 24) throw new Error("Prepared swap has unexpected Raydium instruction data.");
+  if (!SWAP_BASE_INPUT_DISCRIMINATOR.every((value, index) => instruction.data[index] === value)) throw new Error("Prepared transaction is not a swap-base-input instruction.");
+  if (readU64(instruction.data, 8) !== expectedInputAmount || readU64(instruction.data, 16) !== expectedMinimumOutput) {
+    throw new Error("Prepared transaction amounts do not match the server quote.");
+  }
+  if (instruction.accountKeyIndexes[0] !== 0) throw new Error("Prepared Raydium swap payer is not the connected wallet.");
 }
 async function waitFor(connection: Connection, signature: string, lastValidBlockHeight: number) {
   const started = Date.now();
@@ -107,21 +139,19 @@ export function RaydiumCpmmTrader() {
       const rawAmount = parseUnits(amount, input.decimals ?? 9);
       const response = await fetch("/api/raydium/swap/prepare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ poolId: poolId.trim(), trader: w.publicKey.toString(), inputMint, amount: rawAmount.toString(), slippage: slippagePercent / 100 }) });
       const data = await response.json() as PreparedSwap;
-      if (!response.ok || !data.transaction || !data.recentBlockhash || typeof data.lastValidBlockHeight !== "number" || !data.outputAmount || !data.outputMint || !data.poolId || !data.inputMint || !data.programId) throw new Error(data.error || "Unable to prepare Raydium swap");
+      if (!response.ok || !data.transaction || !data.recentBlockhash || typeof data.lastValidBlockHeight !== "number" || !data.outputAmount || !data.minimumOutputAmount || !data.outputMint || !data.poolId || !data.inputMint || !data.programId) throw new Error(data.error || "Unable to prepare Raydium swap");
       if (data.poolId !== poolId.trim()) throw new Error("Prepared swap pool does not match the selected pool.");
       if (data.inputMint !== inputMint) throw new Error("Prepared swap input token does not match the selected token.");
       if (data.outputMint !== output.address) throw new Error("Prepared swap output token does not match the selected pool.");
       if (data.programId !== EXPECTED_CPMM_PROGRAM) throw new Error("Prepared swap uses an unexpected Raydium CPMM program.");
-      setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount || "0", tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
-      setStatus("signing");
+      setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount, tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
 
       const transaction = VersionedTransaction.deserialize(decodeBase64(data.transaction));
       if (transaction.message.recentBlockhash !== data.recentBlockhash) throw new Error("Prepared swap blockhash mismatch. Please try again.");
-      const payer = transaction.message.staticAccountKeys[0]?.toBase58();
-      if (payer !== w.publicKey.toString()) throw new Error("Prepared swap wallet does not match the connected wallet.");
-      const instructionProgramIds = new Set(transaction.message.compiledInstructions.map((instruction) => transaction.message.staticAccountKeys[instruction.programIdIndex]?.toBase58()).filter(Boolean));
-      if (!instructionProgramIds.has(EXPECTED_CPMM_PROGRAM)) throw new Error("Prepared transaction does not contain the expected Raydium CPMM instruction.");
+      const expectedMinimumOutput = BigInt(data.minimumOutputAmount);
+      auditClientTransaction(transaction, rawAmount, expectedMinimumOutput, w.publicKey.toString());
 
+      setStatus("signing");
       const connection = new Connection(RPC, "confirmed");
       const blockHeightBeforeSigning = await connection.getBlockHeight("confirmed");
       if (blockHeightBeforeSigning > data.lastValidBlockHeight) throw new Error("Swap transaction expired before wallet approval. Please try again.");
