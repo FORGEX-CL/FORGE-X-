@@ -1,4 +1,4 @@
-import { AddressLookupTableAccount, Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { AddressLookupTableAccount, Connection, ParsedAccountData, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import BN from "bn.js";
 import {
   ApiV3PoolInfoStandardItemCpmm,
@@ -51,11 +51,6 @@ function positiveSlippage(value: number) {
   return value;
 }
 
-function minimumOutputForSlippage(outputAmount: bigint, slippage: number): bigint {
-  const sdkSlippageBps = Math.floor((1 - slippage) * 10_000);
-  return (outputAmount * BigInt(sdkSlippageBps)) / 10_000n;
-}
-
 async function resolveTransactionAccountKeys(
   connection: Connection,
   transaction: VersionedTransaction,
@@ -84,6 +79,40 @@ async function resolveTransactionAccountKeys(
 
 function readU64(data: Buffer, offset: number): bigint {
   return data.readBigUInt64LE(offset);
+}
+
+async function verifyUserTokenAccount(
+  connection: Connection,
+  accountKey: PublicKey,
+  expectedMint: PublicKey,
+  expectedProgram: PublicKey,
+  trader: PublicKey,
+  role: "input" | "output",
+): Promise<void> {
+  const account = await connection.getParsedAccountInfo(accountKey, "confirmed");
+  if (!account.value || !account.value.owner.equals(expectedProgram)) {
+    throw new Error(`Serialized swap ${role} account is not owned by its verified token program`);
+  }
+
+  if (account.value.data instanceof Buffer || Array.isArray(account.value.data)) {
+    throw new Error(`Serialized swap ${role} account is not a parsed token account`);
+  }
+
+  const parsed = account.value.data as ParsedAccountData;
+  if (parsed.program !== "spl-token" && parsed.program !== "spl-token-2022") {
+    throw new Error(`Serialized swap ${role} account is not an SPL token account`);
+  }
+
+  const info = parsed.parsed?.info as { mint?: string; owner?: string } | undefined;
+  if (!info?.mint || !info.owner) {
+    throw new Error(`Serialized swap ${role} account is missing token-account metadata`);
+  }
+  if (info.mint !== expectedMint.toBase58()) {
+    throw new Error(`Serialized swap ${role} account mint does not match the verified swap mint`);
+  }
+  if (info.owner !== trader.toBase58()) {
+    throw new Error(`Serialized swap ${role} account is not owned by the connected trader`);
+  }
 }
 
 async function auditSerializedSwap(
@@ -161,12 +190,19 @@ async function auditSerializedSwap(
     }
   }
 
-  if (keys[4].equals(inputVault) || keys[4].equals(outputVault) || keys[5].equals(inputVault) || keys[5].equals(outputVault)) {
+  const inputUserAccount = keys[4]!;
+  const outputUserAccount = keys[5]!;
+  if (inputUserAccount.equals(inputVault) || inputUserAccount.equals(outputVault) || outputUserAccount.equals(inputVault) || outputUserAccount.equals(outputVault)) {
     throw new Error("Serialized swap user accounts must not be pool vaults");
   }
-  if (keys[4].equals(keys[5])) {
+  if (inputUserAccount.equals(outputUserAccount)) {
     throw new Error("Serialized swap input and output accounts must be different");
   }
+
+  await Promise.all([
+    verifyUserTokenAccount(connection, inputUserAccount, inputMint, inputTokenProgram, trader, "input"),
+    verifyUserTokenAccount(connection, outputUserAccount, outputMint, outputTokenProgram, trader, "output"),
+  ]);
 }
 
 export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput): Promise<PreparedRaydiumCpmmSwap> {
@@ -228,7 +264,9 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
   const tradeFee = BigInt(swapResult.tradeFee.toString());
   if (outputAmount <= 0n) throw new Error("Swap output is zero");
 
-  const minimumOutputAmount = minimumOutputForSlippage(outputAmount, slippage);
+  const minimumOutputAmount = BigInt(
+    new BN(outputAmount.toString()).mul(new BN(Math.round((1 - slippage) * 1_000_000))).div(new BN(1_000_000)).toString(),
+  );
 
   const { transaction } = await raydium.cpmm.swap({
     poolInfo,
