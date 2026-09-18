@@ -68,7 +68,7 @@ async function resolveTransactionAccountKeys(
 
   const lookupAccounts: AddressLookupTableAccount[] = [];
   for (const lookup of transaction.message.addressTableLookups) {
-    const result = await connection.getAddressLookupTable(lookup.accountKey, "confirmed");
+    const result = await connection.getAddressLookupTable(lookup.accountKey, { commitment: "confirmed" });
     if (!result.value) {
       throw new Error(`Address lookup table is unavailable: ${lookup.accountKey.toBase58()}`);
     }
@@ -306,6 +306,11 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
   const minimumOutputBuffer = Buffer.alloc(8);
   minimumOutputBuffer.writeBigUInt64LE(minimumOutputAmount, 0);
   swapInstruction.data.set(minimumOutputBuffer, 16);
+
+  const inputVault = baseIn ? new PublicKey(poolKeys.vault.A) : new PublicKey(poolKeys.vault.B);
+  const outputVault = baseIn ? new PublicKey(poolKeys.vault.B) : new PublicKey(poolKeys.vault.A);
+  const inputTokenProgram = new PublicKey(baseIn ? poolInfo.mintA.programId : poolInfo.mintB.programId);
+  const outputTokenProgram = new PublicKey(baseIn ? poolInfo.mintB.programId : poolInfo.mintA.programId);
 
   const latest = await input.connection.getLatestBlockhash("confirmed");
   transaction.message.recentBlockhash = latest.blockhash;
