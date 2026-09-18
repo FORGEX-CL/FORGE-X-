@@ -74,7 +74,7 @@ async function auditClientTransaction(
 
   const lookupAccounts: AddressLookupTableAccount[] = [];
   for (const lookup of transaction.message.addressTableLookups) {
-    const result = await connection.getAddressLookupTable(lookup.accountKey, "confirmed");
+    const result = await connection.getAddressLookupTable(lookup.accountKey, { commitment: "confirmed" });
     if (!result.value) throw new Error("Prepared swap references an unavailable address lookup table.");
     lookupAccounts.push(result.value);
   }
