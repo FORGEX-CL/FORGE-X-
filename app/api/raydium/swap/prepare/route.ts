@@ -57,6 +57,13 @@ export async function POST(request: NextRequest) {
       minimumOutputAmount: prepared.minimumOutputAmount.toString(),
       tradeFee: prepared.tradeFee.toString(),
       programId: prepared.programId.toBase58(),
+      authority: prepared.authority.toBase58(),
+      configId: prepared.configId.toBase58(),
+      inputVault: prepared.inputVault.toBase58(),
+      outputVault: prepared.outputVault.toBase58(),
+      inputTokenProgram: prepared.inputTokenProgram.toBase58(),
+      outputTokenProgram: prepared.outputTokenProgram.toBase58(),
+      observationId: prepared.observationId.toBase58(),
       cluster: SOLANA_CLUSTER,
     }, {
       headers: { "Cache-Control": "no-store, max-age=0" },
