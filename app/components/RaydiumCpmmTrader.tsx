@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Connection, VersionedTransaction } from "@solana/web3.js";
+import { AddressLookupTableAccount, Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "mainnet-beta" : "devnet";
 const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || (CLUSTER === "devnet" ? "https://api.devnet.solana.com" : "");
@@ -23,7 +23,7 @@ const SWAP_BASE_INPUT_DISCRIMINATOR = [143, 190, 90, 218, 196, 30, 51, 222];
 type MintInfo = { address: string; symbol: string | null; decimals: number | null };
 type PoolResponse = { pools?: Array<{ id: string; mintA: string | null; mintB: string | null; symbolA: string | null; symbolB: string | null; decimalsA: number | null; decimalsB: number | null; price: number | null }>; error?: string };
 type Wallet = { publicKey?: { toString(): string } | null; signTransaction?: (tx: VersionedTransaction) => Promise<VersionedTransaction> };
-type PreparedSwap = { transaction?: string; recentBlockhash?: string; lastValidBlockHeight?: number; poolId?: string; inputMint?: string; outputMint?: string; programId?: string; outputAmount?: string; minimumOutputAmount?: string; tradeFee?: string; error?: string };
+type PreparedSwap = { transaction?: string; recentBlockhash?: string; lastValidBlockHeight?: number; poolId?: string; inputMint?: string; outputMint?: string; programId?: string; authority?: string; configId?: string; inputVault?: string; outputVault?: string; inputTokenProgram?: string; outputTokenProgram?: string; observationId?: string; outputAmount?: string; minimumOutputAmount?: string; tradeFee?: string; error?: string };
 
 function wallet(): Wallet { return (window as Window & { solana?: Wallet }).solana || {}; }
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
@@ -50,16 +50,49 @@ function readU64(data: Uint8Array, offset: number): bigint {
   for (let i = 0; i < 8; i += 1) value |= BigInt(data[offset + i] || 0) << BigInt(i * 8);
   return value;
 }
-function auditClientTransaction(transaction: VersionedTransaction, expectedInputAmount: bigint, expectedMinimumOutput: bigint, payer: string) {
+async function auditClientTransaction(
+  connection: Connection,
+  transaction: VersionedTransaction,
+  expectedInputAmount: bigint,
+  expectedMinimumOutput: bigint,
+  payer: string,
+  expected: {
+    authority: string;
+    configId: string;
+    inputVault: string;
+    outputVault: string;
+    inputTokenProgram: string;
+    outputTokenProgram: string;
+    inputMint: string;
+    outputMint: string;
+    poolId: string;
+    observationId: string;
+  },
+) {
   if (transaction.message.version !== 0) throw new Error("Prepared swap is not a V0 transaction.");
   if (transaction.message.staticAccountKeys[0]?.toBase58() !== payer) throw new Error("Prepared swap wallet does not match the connected wallet.");
 
-  const programs = transaction.message.compiledInstructions.map((instruction) => transaction.message.staticAccountKeys[instruction.programIdIndex]?.toBase58()).filter(Boolean) as string[];
+  const lookupAccounts: AddressLookupTableAccount[] = [];
+  for (const lookup of transaction.message.addressTableLookups) {
+    const result = await connection.getAddressLookupTable(lookup.accountKey, "confirmed");
+    if (!result.value) throw new Error("Prepared swap references an unavailable address lookup table.");
+    lookupAccounts.push(result.value);
+  }
+  const accountKeys = transaction.message.getAccountKeys({ addressLookupTableAccounts: lookupAccounts });
+  const resolvedKeys = [
+    ...accountKeys.staticAccountKeys,
+    ...(accountKeys.accountKeysFromLookups?.writable ?? []),
+    ...(accountKeys.accountKeysFromLookups?.readonly ?? []),
+  ];
+
+  const programs = transaction.message.compiledInstructions
+    .map((instruction) => resolvedKeys[instruction.programIdIndex]?.toBase58())
+    .filter(Boolean) as string[];
   const allowedPrograms = new Set([EXPECTED_CPMM_PROGRAM, SPL_TOKEN_PROGRAM, TOKEN_2022_PROGRAM, ASSOCIATED_TOKEN_PROGRAM, SYSTEM_PROGRAM, COMPUTE_BUDGET_PROGRAM]);
   if (programs.some((program) => !allowedPrograms.has(program))) throw new Error("Prepared swap contains an unexpected program instruction.");
 
   const cpmm = transaction.message.compiledInstructions.filter(
-    (instruction) => transaction.message.staticAccountKeys[instruction.programIdIndex]?.toBase58() === EXPECTED_CPMM_PROGRAM,
+    (instruction) => resolvedKeys[instruction.programIdIndex]?.toBase58() === EXPECTED_CPMM_PROGRAM,
   );
   if (cpmm.length !== 1) throw new Error("Prepared swap must contain exactly one Raydium CPMM instruction.");
   const instruction = cpmm[0];
@@ -70,6 +103,32 @@ function auditClientTransaction(transaction: VersionedTransaction, expectedInput
     throw new Error("Prepared transaction amounts do not match the server quote.");
   }
   if (instruction.accountKeyIndexes[0] !== 0) throw new Error("Prepared Raydium swap payer is not the connected wallet.");
+
+  const keys = instruction.accountKeyIndexes.map((index) => resolvedKeys[index]);
+  if (keys.some((key) => !key)) throw new Error("Prepared swap contains an unresolved Raydium account.");
+  const expectedKeys = [
+    payer,
+    expected.authority,
+    expected.configId,
+    expected.poolId,
+    expected.inputMint,
+    expected.outputMint,
+    expected.inputVault,
+    expected.outputVault,
+    expected.inputTokenProgram,
+    expected.outputTokenProgram,
+    expected.inputMint,
+    expected.outputMint,
+    expected.observationId,
+  ];
+  // Index 4/5 are user token accounts, so verify every deterministic pool/program key
+  // while leaving only the two wallet-owned token accounts variable.
+  for (const index of [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12]) {
+    if (keys[index]!.toBase58() !== expectedKeys[index]) {
+      throw new Error(`Prepared Raydium account ${index} does not match the server-verified pool wiring.`);
+    }
+  }
+  if (keys[4]!.equals(keys[5]!)) throw new Error("Prepared swap input and output token accounts must differ.");
 }
 async function waitFor(connection: Connection, signature: string, lastValidBlockHeight: number) {
   const started = Date.now();
@@ -144,15 +203,35 @@ export function RaydiumCpmmTrader() {
       if (data.inputMint !== inputMint) throw new Error("Prepared swap input token does not match the selected token.");
       if (data.outputMint !== output.address) throw new Error("Prepared swap output token does not match the selected pool.");
       if (data.programId !== EXPECTED_CPMM_PROGRAM) throw new Error("Prepared swap uses an unexpected Raydium CPMM program.");
+      if (!data.authority || !data.configId || !data.inputVault || !data.outputVault || !data.inputTokenProgram || !data.outputTokenProgram || !data.observationId) throw new Error("Prepared swap verification metadata is incomplete.");
+
       setQuote({ outputAmount: data.outputAmount, minimumOutputAmount: data.minimumOutputAmount, tradeFee: data.tradeFee || "0", outputMint: data.outputMint });
 
       const transaction = VersionedTransaction.deserialize(decodeBase64(data.transaction));
       if (transaction.message.recentBlockhash !== data.recentBlockhash) throw new Error("Prepared swap blockhash mismatch. Please try again.");
       const expectedMinimumOutput = BigInt(data.minimumOutputAmount);
-      auditClientTransaction(transaction, rawAmount, expectedMinimumOutput, w.publicKey.toString());
+      const connection = new Connection(RPC, "confirmed");
+      await auditClientTransaction(
+        connection,
+        transaction,
+        rawAmount,
+        expectedMinimumOutput,
+        w.publicKey.toString(),
+        {
+          authority: data.authority,
+          configId: data.configId,
+          inputVault: data.inputVault,
+          outputVault: data.outputVault,
+          inputTokenProgram: data.inputTokenProgram,
+          outputTokenProgram: data.outputTokenProgram,
+          inputMint: data.inputMint,
+          outputMint: data.outputMint,
+          poolId: data.poolId,
+          observationId: data.observationId,
+        },
+      );
 
       setStatus("signing");
-      const connection = new Connection(RPC, "confirmed");
       const blockHeightBeforeSigning = await connection.getBlockHeight("confirmed");
       if (blockHeightBeforeSigning > data.lastValidBlockHeight) throw new Error("Swap transaction expired before wallet approval. Please try again.");
       const signed = await w.signTransaction(transaction);
