@@ -273,19 +273,32 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
   const tradeFee = BigInt(swapResult.tradeFee.toString());
   if (outputAmount <= 0n) throw new Error("Swap output is zero");
 
-  const minimumOutputAmount = BigInt(
-    new BN(outputAmount.toString()).mul(new BN(Math.round((1 - slippage) * 1_000_000))).div(new BN(1_000_000)).toString(),
-  );
+  // Keep slippage arithmetic integer-based. The SDK's swap helper accepts a JS number
+  // and mutates the quote with floating-point arithmetic, so we build with zero slippage
+  // and then set the exact u64 minimum-output field ourselves.
+  const slippagePartsPerMillion = BigInt(Math.round(slippage * 1_000_000));
+  const minimumOutputAmount =
+    outputAmount * (1_000_000n - slippagePartsPerMillion) / 1_000_000n;
 
   const { transaction } = await raydium.cpmm.swap({
     poolInfo,
     poolKeys,
     inputAmount: new BN(input.inputAmount.toString()),
     swapResult,
-    slippage,
+    slippage: 0,
     baseIn,
     txVersion: TxVersion.V0,
   });
+
+  const swapInstruction = transaction.message.compiledInstructions.find(
+    (instruction) => transaction.message.staticAccountKeys[instruction.programIdIndex]?.equals(expectedProgram),
+  );
+  if (!swapInstruction || swapInstruction.data.length !== CPMM_SWAP_DATA_LENGTH) {
+    throw new Error("Raydium SDK returned an unexpected CPMM swap instruction");
+  }
+  const minimumOutputBuffer = Buffer.alloc(8);
+  minimumOutputBuffer.writeBigUInt64LE(minimumOutputAmount, 0);
+  swapInstruction.data.set(minimumOutputBuffer, 16);
 
   const latest = await input.connection.getLatestBlockhash("confirmed");
   transaction.message.recentBlockhash = latest.blockhash;
