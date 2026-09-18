@@ -89,7 +89,7 @@ async function verifyUserTokenAccount(
   trader: PublicKey,
   role: "input" | "output",
 ): Promise<void> {
-  const account = await connection.getParsedAccountInfo(accountKey, "confirmed");
+  const account = await connection.getParsedAccountInfo(accountKey, { commitment: "confirmed" });
   if (!account.value) {
     if (role === "output") {
       // Raydium can include output-account creation in the same transaction. The
