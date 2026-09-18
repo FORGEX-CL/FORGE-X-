@@ -37,6 +37,13 @@ export type PreparedRaydiumCpmmSwap = {
   minimumOutputAmount: bigint;
   tradeFee: bigint;
   programId: PublicKey;
+  authority: PublicKey;
+  configId: PublicKey;
+  inputVault: PublicKey;
+  outputVault: PublicKey;
+  inputTokenProgram: PublicKey;
+  outputTokenProgram: PublicKey;
+  observationId: PublicKey;
   lastValidBlockHeight: number;
 };
 
@@ -336,6 +343,13 @@ export async function prepareRaydiumCpmmSwap(input: PrepareRaydiumCpmmSwapInput)
     minimumOutputAmount,
     tradeFee,
     programId: expectedProgram,
+    authority: getPdaPoolAuthority(expectedProgram).publicKey,
+    configId: new PublicKey(poolKeys.config.id),
+    inputVault,
+    outputVault,
+    inputTokenProgram,
+    outputTokenProgram,
+    observationId: getPdaObservationId(expectedProgram, input.poolId).publicKey,
     lastValidBlockHeight: latest.lastValidBlockHeight,
   };
 }
