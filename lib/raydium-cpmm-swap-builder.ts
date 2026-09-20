@@ -144,6 +144,13 @@ async function auditSerializedSwap(
   poolInfo: ApiV3PoolInfoStandardItemCpmm,
   poolKeys: CpmmKeys,
 ): Promise<void> {
+  if (transaction.message.header.numRequiredSignatures !== 1) {
+    throw new Error("Serialized Raydium swap must have exactly one required signer");
+  }
+  if (!transaction.message.staticAccountKeys[0]?.equals(trader)) {
+    throw new Error("Serialized Raydium swap fee payer must be the connected trader");
+  }
+
   const accountKeys = await resolveTransactionAccountKeys(connection, transaction);
   const matchingInstructions = transaction.message.compiledInstructions.filter(
     (instruction) => accountKeys[instruction.programIdIndex]?.equals(expectedProgram),
