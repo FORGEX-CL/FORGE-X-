@@ -151,6 +151,28 @@ function verifyInitializeAccount(
   }
 }
 
+function verifyCloseAccount(
+  instruction: VersionedTransaction["message"]["compiledInstructions"][number],
+  accountKeys: PublicKey[],
+  trader: PublicKey,
+  allowedTokenPrograms: PublicKey[],
+): void {
+  if (instruction.data.length !== 1 || instruction.data[0] !== 9) {
+    throw new Error("Token close instruction is not CloseAccount");
+  }
+  if (instruction.accountKeyIndexes.length !== 3) {
+    throw new Error("Token close instruction has unexpected account count");
+  }
+  const account = key(accountKeys, instruction.accountKeyIndexes, 0, "close account");
+  const destination = key(accountKeys, instruction.accountKeyIndexes, 1, "close destination");
+  const owner = key(accountKeys, instruction.accountKeyIndexes, 2, "close owner");
+  const program = accountKeys[instruction.programIdIndex];
+  if (!program || !equalAny(program, allowedTokenPrograms) || !owner.equals(trader) || !destination.equals(trader)) {
+    throw new Error("Token close instruction must return funds to the connected trader");
+  }
+  return;
+}
+
 export async function auditRaydiumSwapSupportingInstructions(
   connection: Connection,
   transaction: VersionedTransaction,
@@ -198,15 +220,22 @@ export async function auditRaydiumSwapSupportingInstructions(
 
     if (program.equals(inputTokenProgram) || program.equals(outputTokenProgram)) {
       const data = instruction.data;
-      if (data.length !== 1 || data[0] !== TOKEN_INITIALIZE_ACCOUNT) {
-        throw new Error("Prepared swap contains an unsupported token-program instruction");
+      if (data.length === 1 && data[0] === TOKEN_INITIALIZE_ACCOUNT) {
+        verifyInitializeAccount(instruction, accountKeys, trader, allowedTokenPrograms, allowedMints);
+        const initialized = key(accountKeys, instruction.accountKeyIndexes, 0, "initialized account");
+        if (!createdAccounts.has(initialized.toBase58())) {
+          throw new Error("Token account initialization is not bound to a transaction-created trader account");
+        }
+        continue;
       }
-      verifyInitializeAccount(instruction, accountKeys, trader, allowedTokenPrograms, allowedMints);
-      const initialized = key(accountKeys, instruction.accountKeyIndexes, 0, "initialized account");
-      if (!createdAccounts.has(initialized.toBase58())) {
-        throw new Error("Token account initialization is not bound to a transaction-created trader account");
+      if (data.length === 1 && data[0] === 9) {
+        if (!createdAccounts.has(key(accountKeys, instruction.accountKeyIndexes, 0, "close account").toBase58())) {
+          throw new Error("Token close instruction is not bound to a transaction-created WSOL account");
+        }
+        verifyCloseAccount(instruction, accountKeys, trader, allowedTokenPrograms);
+        continue;
       }
-      continue;
+      throw new Error("Prepared swap contains an unsupported token-program instruction");
     }
 
     if (program.equals(new PublicKey("ComputeBudget111111111111111111111111111111"))) {
