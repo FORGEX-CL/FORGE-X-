@@ -116,6 +116,7 @@ async function auditClientTransaction(
     connection,
     transaction,
     resolvedKeys,
+    new PublicKey(EXPECTED_CPMM_PROGRAM),
     new PublicKey(payer),
     new PublicKey(expected.inputMint),
     new PublicKey(expected.outputMint),
