@@ -95,6 +95,7 @@ async function auditClientTransaction(
   },
 ) {
   if (transaction.message.version !== 0) throw new Error("Prepared swap is not a V0 transaction.");
+  if (transaction.message.header.numRequiredSignatures !== 1) throw new Error("Prepared swap must have exactly one required signer.");
   if (transaction.message.staticAccountKeys[0]?.toBase58() !== payer) throw new Error("Prepared swap wallet does not match the connected wallet.");
 
   const lookupAccounts: AddressLookupTableAccount[] = [];
