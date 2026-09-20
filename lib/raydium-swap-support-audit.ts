@@ -3,8 +3,6 @@ import { NATIVE_MINT } from "@solana/spl-token";
 
 const SYSTEM_CREATE_ACCOUNT_WITH_SEED = 3;
 const TOKEN_INITIALIZE_ACCOUNT = 1;
-const TOKEN_TRANSFER = 3;
-const TOKEN_CLOSE_ACCOUNT = 9;
 const ASSOCIATED_CREATE_IDEMPOTENT = 1;
 const TOKEN_ACCOUNT_SIZE = 165;
 const SYSTEM_PROGRAM = new PublicKey("11111111111111111111111111111111");
@@ -152,31 +150,6 @@ function verifyInitializeAccount(
   }
 }
 
-function verifyCloseAccount(
-  instruction: VersionedTransaction["message"]["compiledInstructions"][number],
-  accountKeys: PublicKey[],
-  trader: PublicKey,
-  allowedTokenPrograms: PublicKey[],
-): void {
-  if (instruction.data.length !== 1 || instruction.data[0] !== TOKEN_CLOSE_ACCOUNT) {
-    throw new Error("Token close instruction is not CloseAccount");
-  }
-  if (instruction.accountKeyIndexes.length !== 3) {
-    throw new Error("Token close instruction has unexpected account count");
-  }
-  const account = key(accountKeys, instruction.accountKeyIndexes, 0, "close account");
-  const destination = key(accountKeys, instruction.accountKeyIndexes, 1, "close destination");
-  const owner = key(accountKeys, instruction.accountKeyIndexes, 2, "close owner");
-  const program = accountKeys[instruction.programIdIndex];
-
-  if (!program || !equalAny(program, allowedTokenPrograms) || !owner.equals(trader) || !destination.equals(trader)) {
-    throw new Error("Token close instruction must return funds to the connected trader");
-  }
-  if (account.equals(trader)) {
-    throw new Error("Token close instruction cannot close the trader wallet");
-  }
-}
-
 export async function auditRaydiumSwapSupportingInstructions(
   connection: Connection,
   transaction: VersionedTransaction,
@@ -191,11 +164,12 @@ export async function auditRaydiumSwapSupportingInstructions(
   const allowedMints = [inputMint, outputMint];
   const allowedTokenPrograms = [inputTokenProgram, outputTokenProgram];
   const wsol = new PublicKey(NATIVE_MINT.toBase58());
-  const rent = BigInt(await connection.getMinimumBalanceForRentExemption(TOKEN_ACCOUNT_SIZE, "confirmed"));
+  const hasWsol = allowedMints.some((mint) => mint.equals(wsol));
+  const rent = hasWsol
+    ? BigInt(await connection.getMinimumBalanceForRentExemption(TOKEN_ACCOUNT_SIZE, "confirmed"))
+    : 0n;
   const expectedWsolFunding = inputMint.equals(wsol) ? rent + inputAmount : rent;
-
   const createdAccounts = new Set<string>();
-  const expectedTemporaryPrograms = new Set(allowedTokenPrograms.map((program) => program.toBase58()));
 
   for (const instruction of transaction.message.compiledInstructions) {
     const program = accountKeys[instruction.programIdIndex];
@@ -207,6 +181,7 @@ export async function auditRaydiumSwapSupportingInstructions(
     }
 
     if (program.equals(SYSTEM_PROGRAM)) {
+      if (!hasWsol) throw new Error("Prepared swap contains unexpected system-account creation");
       const created = readCreateAccountWithSeed(
         instruction,
         accountKeys,
@@ -218,7 +193,7 @@ export async function auditRaydiumSwapSupportingInstructions(
       continue;
     }
 
-    if (expectedTemporaryPrograms.has(program.toBase58())) {
+    if (program.equals(inputTokenProgram) || program.equals(outputTokenProgram)) {
       const data = instruction.data;
       if (data.length !== 1 || data[0] !== TOKEN_INITIALIZE_ACCOUNT) {
         throw new Error("Prepared swap contains an unsupported token-program instruction");
@@ -232,23 +207,15 @@ export async function auditRaydiumSwapSupportingInstructions(
     }
 
     if (program.equals(new PublicKey("ComputeBudget111111111111111111111111111111"))) {
-      if (instruction.data.length < 1 || ![1, 2, 3, 4].includes(instruction.data[0])) {
-        throw new Error("Compute Budget instruction has an unsupported variant");
-      }
+      const tag = instruction.data[0];
+      const validLength =
+        (tag === 1 || tag === 2 || tag === 4) ? instruction.data.length === 5 :
+        tag === 3 ? instruction.data.length === 9 :
+        false;
+      if (!validLength) throw new Error("Compute Budget instruction has an unsupported or malformed variant");
       continue;
     }
 
     throw new Error("Prepared swap contains an unsupported supporting instruction");
   }
-
-  for (const created of createdAccounts) {
-    const createdKey = new PublicKey(created);
-    const account = await connection.getAccountInfo(createdKey, "confirmed");
-    if (!account && !allowedMints.some((mint) => mint.equals(wsol))) {
-      throw new Error("Prepared swap created an unexpected token account");
-    }
-  }
-
-  void inputAmount;
-  void expectedTemporaryPrograms;
 }
