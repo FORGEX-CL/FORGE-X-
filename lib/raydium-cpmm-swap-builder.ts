@@ -154,19 +154,6 @@ async function auditSerializedSwap(
 
   const accountKeys = await resolveTransactionAccountKeys(connection, transaction);
 
-  await auditRaydiumSwapSupportingInstructions(
-    connection,
-    transaction,
-    accountKeys,
-    expectedProgram,
-    trader,
-    inputMint,
-    outputMint,
-    inputTokenProgram,
-    outputTokenProgram,
-    inputAmount,
-  );
-
   const matchingInstructions = transaction.message.compiledInstructions.filter(
     (instruction) => accountKeys[instruction.programIdIndex]?.equals(expectedProgram),
   );
@@ -205,6 +192,19 @@ async function auditSerializedSwap(
   const outputVault = inputMint.equals(mintA) ? new PublicKey(poolKeys.vault.B) : new PublicKey(poolKeys.vault.A);
   const inputTokenProgram = new PublicKey(inputMint.equals(mintA) ? poolInfo.mintA.programId : poolInfo.mintB.programId);
   const outputTokenProgram = new PublicKey(outputMint.equals(mintA) ? poolInfo.mintA.programId : poolInfo.mintB.programId);
+
+  await auditRaydiumSwapSupportingInstructions(
+    connection,
+    transaction,
+    accountKeys,
+    expectedProgram,
+    trader,
+    inputMint,
+    outputMint,
+    inputTokenProgram,
+    outputTokenProgram,
+    inputAmount,
+  );
 
   const expected = [
     trader,
