@@ -33,7 +33,6 @@ function equalAny(value: PublicKey, candidates: PublicKey[]): boolean {
 function verifyAtaInstruction(
   instruction: VersionedTransaction["message"]["compiledInstructions"][number],
   accountKeys: PublicKey[],
-  expectedProgram: PublicKey,
   trader: PublicKey,
   inputMint: PublicKey,
   outputMint: PublicKey,
@@ -177,6 +176,7 @@ export async function auditRaydiumSwapSupportingInstructions(
   connection: Connection,
   transaction: VersionedTransaction,
   accountKeys: PublicKey[],
+  expectedProgram: PublicKey,
   trader: PublicKey,
   inputMint: PublicKey,
   outputMint: PublicKey,
