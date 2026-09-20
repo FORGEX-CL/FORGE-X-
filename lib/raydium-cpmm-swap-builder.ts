@@ -14,6 +14,7 @@ import {
   TxVersion,
 } from "@raydium-io/raydium-sdk-v2";
 import { SOLANA_CLUSTER } from "@/lib/solana-client-config";
+import { auditRaydiumSwapSupportingInstructions } from "@/lib/raydium-swap-support-audit";
 
 const CPMM_SWAP_BASE_INPUT_DISCRIMINATOR = Buffer.from([143, 190, 90, 218, 196, 30, 51, 222]);
 const CPMM_SWAP_DATA_LENGTH = 24;
@@ -152,6 +153,20 @@ async function auditSerializedSwap(
   }
 
   const accountKeys = await resolveTransactionAccountKeys(connection, transaction);
+
+  await auditRaydiumSwapSupportingInstructions(
+    connection,
+    transaction,
+    accountKeys,
+    expectedProgram,
+    trader,
+    inputMint,
+    outputMint,
+    inputTokenProgram,
+    outputTokenProgram,
+    inputAmount,
+  );
+
   const matchingInstructions = transaction.message.compiledInstructions.filter(
     (instruction) => accountKeys[instruction.programIdIndex]?.equals(expectedProgram),
   );
