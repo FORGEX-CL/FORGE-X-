@@ -59,6 +59,9 @@ function verifyAtaInstruction(
   if (!equalAny(mint, [inputMint, outputMint])) {
     throw new Error("Associated Token instruction uses an unexpected mint");
   }
+  if (mint.equals(NATIVE_MINT)) {
+    throw new Error("WSOL must use the verified temporary token-account path");
+  }
 
   const expectedProgram = mint.equals(inputMint) ? inputTokenProgram : outputTokenProgram;
   if (!tokenProgram.equals(expectedProgram)) {
@@ -223,6 +226,10 @@ export async function auditRaydiumSwapSupportingInstructions(
       if (data.length === 1 && data[0] === TOKEN_INITIALIZE_ACCOUNT) {
         verifyInitializeAccount(instruction, accountKeys, trader, allowedTokenPrograms, allowedMints);
         const initialized = key(accountKeys, instruction.accountKeyIndexes, 0, "initialized account");
+        const initializedMint = key(accountKeys, instruction.accountKeyIndexes, 1, "initialized mint");
+        if (!initializedMint.equals(wsol)) {
+          throw new Error("Transaction-created WSOL account must be initialized for the native mint");
+        }
         if (!createdAccounts.has(initialized.toBase58())) {
           throw new Error("Token account initialization is not bound to a transaction-created trader account");
         }
