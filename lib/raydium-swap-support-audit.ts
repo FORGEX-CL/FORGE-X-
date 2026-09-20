@@ -176,6 +176,7 @@ export async function auditRaydiumSwapSupportingInstructions(
   connection: Connection,
   transaction: VersionedTransaction,
   accountKeys: PublicKey[],
+  expectedProgram: PublicKey,
   trader: PublicKey,
   inputMint: PublicKey,
   outputMint: PublicKey,
