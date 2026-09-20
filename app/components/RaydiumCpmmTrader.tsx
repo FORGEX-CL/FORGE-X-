@@ -50,6 +50,31 @@ function readU64(data: Uint8Array, offset: number): bigint {
   for (let i = 0; i < 8; i += 1) value |= BigInt(data[offset + i] || 0) << BigInt(i * 8);
   return value;
 }
+async function verifyClientTokenAccount(
+  connection: Connection,
+  accountKey: PublicKey,
+  expectedMint: string,
+  expectedProgram: string,
+  expectedOwner: string,
+  role: "input" | "output",
+) {
+  const account = await connection.getParsedAccountInfo(accountKey, { commitment: "confirmed" });
+  if (!account.value) {
+    if (role === "output") return;
+    throw new Error(`Prepared swap ${role} token account does not exist.`);
+  }
+  if (account.value.owner.toBase58() !== expectedProgram) {
+    throw new Error(`Prepared swap ${role} token account uses an unexpected token program.`);
+  }
+  const data = account.value.data as { program?: string; parsed?: { info?: { mint?: string; owner?: string } } };
+  if (data.program !== "spl-token" && data.program !== "spl-token-2022") {
+    throw new Error(`Prepared swap ${role} account is not a parsed SPL token account.`);
+  }
+  const info = data.parsed?.info;
+  if (info?.mint !== expectedMint || info.owner !== expectedOwner) {
+    throw new Error(`Prepared swap ${role} token account is not owned by the connected wallet for the expected mint.`);
+  }
+}
 async function auditClientTransaction(
   connection: Connection,
   transaction: VersionedTransaction,
@@ -129,6 +154,10 @@ async function auditClientTransaction(
     }
   }
   if (keys[4]!.equals(keys[5]!)) throw new Error("Prepared swap input and output token accounts must differ.");
+  await Promise.all([
+    verifyClientTokenAccount(connection, keys[4]!, expected.inputMint, expected.inputTokenProgram, payer, "input"),
+    verifyClientTokenAccount(connection, keys[5]!, expected.outputMint, expected.outputTokenProgram, payer, "output"),
+  ]);
 }
 async function waitFor(connection: Connection, signature: string, lastValidBlockHeight: number) {
   const started = Date.now();
