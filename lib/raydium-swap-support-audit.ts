@@ -80,7 +80,7 @@ function verifyAtaInstruction(
   }
 }
 
-function readCreateAccountWithSeed(
+async function readCreateAccountWithSeed(
   instruction: VersionedTransaction["message"]["compiledInstructions"][number],
   accountKeys: PublicKey[],
   trader: PublicKey,
@@ -117,7 +117,7 @@ function readCreateAccountWithSeed(
   }
   const payer = key(accountKeys, instruction.accountKeyIndexes, 0, "create payer");
   const created = key(accountKeys, instruction.accountKeyIndexes, 1, "created account");
-  if (!payer.equals(trader) || !created.equals(PublicKey.createWithSeed(trader, seed, expectedTokenProgram))) {
+  if (!payer.equals(trader) || !created.equals(await PublicKey.createWithSeed(trader, seed, expectedTokenProgram))) {
     throw new Error("CreateAccountWithSeed does not derive the expected trader-owned token account");
   }
   if (instruction.accountKeyIndexes.length === 3 && !key(accountKeys, instruction.accountKeyIndexes, 2, "create base").equals(trader)) {
@@ -165,7 +165,6 @@ function verifyCloseAccount(
   if (instruction.accountKeyIndexes.length !== 3) {
     throw new Error("Token close instruction has unexpected account count");
   }
-  const account = key(accountKeys, instruction.accountKeyIndexes, 0, "close account");
   const destination = key(accountKeys, instruction.accountKeyIndexes, 1, "close destination");
   const owner = key(accountKeys, instruction.accountKeyIndexes, 2, "close owner");
   const program = accountKeys[instruction.programIdIndex];
@@ -210,7 +209,7 @@ export async function auditRaydiumSwapSupportingInstructions(
 
     if (program.equals(SYSTEM_PROGRAM)) {
       if (!hasWsol) throw new Error("Prepared swap contains unexpected system-account creation");
-      const created = readCreateAccountWithSeed(
+      const created = await readCreateAccountWithSeed(
         instruction,
         accountKeys,
         trader,
