@@ -279,6 +279,14 @@ export function RaydiumCpmmTrader() {
       const blockHeightBeforeSigning = await connection.getBlockHeight("confirmed");
       if (blockHeightBeforeSigning > data.lastValidBlockHeight) throw new Error("Swap transaction expired before wallet approval. Please try again.");
       const signed = await w.signTransaction(transaction);
+      const originalMessage = transaction.message.serialize();
+      const signedMessage = signed.message.serialize();
+      if (originalMessage.length !== signedMessage.length || originalMessage.some((value, index) => value !== signedMessage[index])) {
+        throw new Error("Wallet changed the audited swap transaction message while signing.");
+      }
+      if (signed.message.header.numRequiredSignatures !== 1 || signed.signatures.length !== 1) {
+        throw new Error("Signed swap must contain exactly one trader signature.");
+      }
       const blockHeightAfterSigning = await connection.getBlockHeight("confirmed");
       if (blockHeightAfterSigning > data.lastValidBlockHeight) throw new Error("Swap transaction expired while waiting for wallet approval. Please try again.");
       setStatus("confirming");
