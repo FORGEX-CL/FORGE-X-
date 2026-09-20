@@ -111,6 +111,18 @@ async function auditClientTransaction(
     ...(accountKeys.accountKeysFromLookups?.readonly ?? []),
   ];
 
+  await auditRaydiumSwapSupportingInstructions(
+    connection,
+    transaction,
+    resolvedKeys,
+    new PublicKey(payer),
+    new PublicKey(expected.inputMint),
+    new PublicKey(expected.outputMint),
+    new PublicKey(expected.inputTokenProgram),
+    new PublicKey(expected.outputTokenProgram),
+    expectedInputAmount,
+  );
+
   const programs = transaction.message.compiledInstructions
     .map((instruction) => resolvedKeys[instruction.programIdIndex]?.toBase58())
     .filter(Boolean) as string[];
