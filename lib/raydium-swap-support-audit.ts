@@ -33,6 +33,7 @@ function equalAny(value: PublicKey, candidates: PublicKey[]): boolean {
 function verifyAtaInstruction(
   instruction: VersionedTransaction["message"]["compiledInstructions"][number],
   accountKeys: PublicKey[],
+  expectedProgram: PublicKey,
   trader: PublicKey,
   inputMint: PublicKey,
   outputMint: PublicKey,
@@ -174,6 +175,8 @@ export async function auditRaydiumSwapSupportingInstructions(
   for (const instruction of transaction.message.compiledInstructions) {
     const program = accountKeys[instruction.programIdIndex];
     if (!program) throw new Error("Prepared swap contains an unresolved program account");
+
+    if (program.equals(expectedProgram)) continue;
 
     if (program.equals(ASSOCIATED_TOKEN_PROGRAM)) {
       verifyAtaInstruction(instruction, accountKeys, trader, inputMint, outputMint, inputTokenProgram, outputTokenProgram);
