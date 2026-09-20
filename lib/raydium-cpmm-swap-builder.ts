@@ -187,7 +187,6 @@ async function auditSerializedSwap(
   }
 
   const mintA = new PublicKey(poolInfo.mintA.address);
-  const mintB = new PublicKey(poolInfo.mintB.address);
   const inputVault = inputMint.equals(mintA) ? new PublicKey(poolKeys.vault.A) : new PublicKey(poolKeys.vault.B);
   const outputVault = inputMint.equals(mintA) ? new PublicKey(poolKeys.vault.B) : new PublicKey(poolKeys.vault.A);
   const inputTokenProgram = new PublicKey(inputMint.equals(mintA) ? poolInfo.mintA.programId : poolInfo.mintB.programId);
