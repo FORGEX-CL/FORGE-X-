@@ -112,19 +112,6 @@ async function auditClientTransaction(
     ...(accountKeys.accountKeysFromLookups?.readonly ?? []),
   ];
 
-  await auditRaydiumSwapSupportingInstructions(
-    connection,
-    transaction,
-    resolvedKeys,
-    new PublicKey(EXPECTED_CPMM_PROGRAM),
-    new PublicKey(payer),
-    new PublicKey(expected.inputMint),
-    new PublicKey(expected.outputMint),
-    new PublicKey(expected.inputTokenProgram),
-    new PublicKey(expected.outputTokenProgram),
-    expectedInputAmount,
-  );
-
   const programs = transaction.message.compiledInstructions
     .map((instruction) => resolvedKeys[instruction.programIdIndex]?.toBase58())
     .filter(Boolean) as string[];
@@ -169,6 +156,20 @@ async function auditClientTransaction(
     }
   }
   if (keys[4]!.equals(keys[5]!)) throw new Error("Prepared swap input and output token accounts must differ.");
+  await auditRaydiumSwapSupportingInstructions(
+    connection,
+    transaction,
+    resolvedKeys,
+    new PublicKey(EXPECTED_CPMM_PROGRAM),
+    new PublicKey(payer),
+    new PublicKey(expected.inputMint),
+    new PublicKey(expected.outputMint),
+    new PublicKey(expected.inputTokenProgram),
+    new PublicKey(expected.outputTokenProgram),
+    expectedInputAmount,
+    keys[4]!,
+    keys[5]!,
+  );
   await Promise.all([
     verifyClientTokenAccount(connection, keys[4]!, expected.inputMint, expected.inputTokenProgram, payer, "input"),
     verifyClientTokenAccount(connection, keys[5]!, expected.outputMint, expected.outputTokenProgram, payer, "output"),
