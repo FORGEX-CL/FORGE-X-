@@ -38,6 +38,8 @@ function verifyAtaInstruction(
   outputMint: PublicKey,
   inputTokenProgram: PublicKey,
   outputTokenProgram: PublicKey,
+  expectedInputUserAccount: PublicKey,
+  expectedOutputUserAccount: PublicKey,
 ): void {
   if (instruction.data.length !== 1 || instruction.data[0] !== ASSOCIATED_CREATE_IDEMPOTENT) {
     throw new Error("Associated Token instruction is not CreateIdempotent");
@@ -77,6 +79,10 @@ function verifyAtaInstruction(
   );
   if (!ata.equals(expectedAta)) {
     throw new Error("Associated Token instruction does not derive the canonical trader ATA");
+  }
+  const expectedUserAccount = mint.equals(inputMint) ? expectedInputUserAccount : expectedOutputUserAccount;
+  if (!ata.equals(expectedUserAccount)) {
+    throw new Error("Associated Token instruction is not bound to the Raydium swap user account");
   }
 }
 
@@ -185,6 +191,8 @@ export async function auditRaydiumSwapSupportingInstructions(
   inputTokenProgram: PublicKey,
   outputTokenProgram: PublicKey,
   inputAmount: bigint,
+  expectedInputUserAccount: PublicKey,
+  expectedOutputUserAccount: PublicKey,
 ): Promise<void> {
   const allowedMints = [inputMint, outputMint];
   const allowedTokenPrograms = [inputTokenProgram, outputTokenProgram];
@@ -195,20 +203,38 @@ export async function auditRaydiumSwapSupportingInstructions(
     : 0n;
   const expectedWsolFunding = inputMint.equals(wsol) ? rent + inputAmount : rent;
   const createdAccounts = new Set<string>();
+  let initializedCount = 0;
+  let closedCount = 0;
+  let swapSeen = false;
 
   for (const instruction of transaction.message.compiledInstructions) {
     const program = accountKeys[instruction.programIdIndex];
     if (!program) throw new Error("Prepared swap contains an unresolved program account");
 
-    if (program.equals(expectedProgram)) continue;
+    if (program.equals(expectedProgram)) {
+      swapSeen = true;
+      continue;
+    }
 
     if (program.equals(ASSOCIATED_TOKEN_PROGRAM)) {
-      verifyAtaInstruction(instruction, accountKeys, trader, inputMint, outputMint, inputTokenProgram, outputTokenProgram);
+      verifyAtaInstruction(
+        instruction,
+        accountKeys,
+        trader,
+        inputMint,
+        outputMint,
+        inputTokenProgram,
+        outputTokenProgram,
+        expectedInputUserAccount,
+        expectedOutputUserAccount,
+      );
       continue;
     }
 
     if (program.equals(SYSTEM_PROGRAM)) {
       if (!hasWsol) throw new Error("Prepared swap contains unexpected system-account creation");
+      if (swapSeen) throw new Error("WSOL account creation must occur before the Raydium swap");
+      if (createdAccounts.size !== 0) throw new Error("Prepared swap contains multiple WSOL account creations");
       const created = await readCreateAccountWithSeed(
         instruction,
         accountKeys,
@@ -216,6 +242,9 @@ export async function auditRaydiumSwapSupportingInstructions(
         new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
         expectedWsolFunding,
       );
+      if (!created.equals(inputMint.equals(wsol) ? expectedInputUserAccount : expectedOutputUserAccount)) {
+        throw new Error("WSOL temporary account is not bound to the Raydium swap user account");
+      }
       createdAccounts.add(created.toBase58());
       continue;
     }
@@ -223,6 +252,8 @@ export async function auditRaydiumSwapSupportingInstructions(
     if (program.equals(inputTokenProgram) || program.equals(outputTokenProgram)) {
       const data = instruction.data;
       if (data.length === 1 && data[0] === TOKEN_INITIALIZE_ACCOUNT) {
+        if (swapSeen) throw new Error("WSOL account initialization must occur before the Raydium swap");
+        if (initializedCount !== 0) throw new Error("Prepared swap contains multiple WSOL account initializations");
         verifyInitializeAccount(instruction, accountKeys, trader, allowedTokenPrograms, allowedMints);
         const initialized = key(accountKeys, instruction.accountKeyIndexes, 0, "initialized account");
         const initializedMint = key(accountKeys, instruction.accountKeyIndexes, 1, "initialized mint");
@@ -232,13 +263,25 @@ export async function auditRaydiumSwapSupportingInstructions(
         if (!createdAccounts.has(initialized.toBase58())) {
           throw new Error("Token account initialization is not bound to a transaction-created trader account");
         }
+        const expectedUserAccount = inputMint.equals(wsol) ? expectedInputUserAccount : expectedOutputUserAccount;
+        if (!initialized.equals(expectedUserAccount)) {
+          throw new Error("WSOL initialization is not bound to the Raydium swap user account");
+        }
+        initializedCount += 1;
         continue;
       }
       if (data.length === 1 && data[0] === 9) {
+        if (!swapSeen) throw new Error("WSOL account close must occur after the Raydium swap");
+        if (closedCount !== 0) throw new Error("Prepared swap contains multiple WSOL account closes");
         if (!createdAccounts.has(key(accountKeys, instruction.accountKeyIndexes, 0, "close account").toBase58())) {
           throw new Error("Token close instruction is not bound to a transaction-created WSOL account");
         }
         verifyCloseAccount(instruction, accountKeys, trader, allowedTokenPrograms);
+        const expectedUserAccount = inputMint.equals(wsol) ? expectedInputUserAccount : expectedOutputUserAccount;
+        if (!key(accountKeys, instruction.accountKeyIndexes, 0, "close account").equals(expectedUserAccount)) {
+          throw new Error("WSOL close is not bound to the Raydium swap user account");
+        }
+        closedCount += 1;
         continue;
       }
       throw new Error("Prepared swap contains an unsupported token-program instruction");
@@ -255,5 +298,9 @@ export async function auditRaydiumSwapSupportingInstructions(
     }
 
     throw new Error("Prepared swap contains an unsupported supporting instruction");
+  }
+
+  if (hasWsol && (createdAccounts.size !== 1 || initializedCount !== 1 || closedCount !== 1)) {
+    throw new Error("WSOL swap must contain exactly one verified temporary account create, initialize, and close sequence");
   }
 }
