@@ -86,7 +86,7 @@ async function readCreateAccountWithSeed(
   trader: PublicKey,
   expectedTokenProgram: PublicKey,
   expectedLamports: bigint,
-): PublicKey {
+): Promise<PublicKey> {
   const data = instruction.data;
   if (data.length < 4 + 32 + 4 + 8 + 8 + 32 || u32(data, 0) !== SYSTEM_CREATE_ACCOUNT_WITH_SEED) {
     throw new Error("System instruction must be CreateAccountWithSeed");
