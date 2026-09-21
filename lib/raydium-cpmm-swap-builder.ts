@@ -192,19 +192,6 @@ async function auditSerializedSwap(
   const inputTokenProgram = new PublicKey(inputMint.equals(mintA) ? poolInfo.mintA.programId : poolInfo.mintB.programId);
   const outputTokenProgram = new PublicKey(outputMint.equals(mintA) ? poolInfo.mintA.programId : poolInfo.mintB.programId);
 
-  await auditRaydiumSwapSupportingInstructions(
-    connection,
-    transaction,
-    accountKeys,
-    expectedProgram,
-    trader,
-    inputMint,
-    outputMint,
-    inputTokenProgram,
-    outputTokenProgram,
-    inputAmount,
-  );
-
   const expected = [
     trader,
     getPdaPoolAuthority(expectedProgram).publicKey,
@@ -235,6 +222,21 @@ async function auditSerializedSwap(
   if (inputUserAccount.equals(outputUserAccount)) {
     throw new Error("Serialized swap input and output accounts must be different");
   }
+
+  await auditRaydiumSwapSupportingInstructions(
+    connection,
+    transaction,
+    accountKeys,
+    expectedProgram,
+    trader,
+    inputMint,
+    outputMint,
+    inputTokenProgram,
+    outputTokenProgram,
+    inputAmount,
+    inputUserAccount,
+    outputUserAccount,
+  );
 
   await Promise.all([
     verifyUserTokenAccount(connection, inputUserAccount, inputMint, inputTokenProgram, trader, "input"),
