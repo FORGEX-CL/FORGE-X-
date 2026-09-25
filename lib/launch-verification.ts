@@ -13,6 +13,8 @@ export type LaunchVerification = {
   metadataAuthorityRevoked: boolean;
   metadataImmutable: boolean;
   metadataUri: string;
+  name: string;
+  symbol: string;
   valid: boolean;
 };
 
@@ -48,6 +50,8 @@ export async function verifyFairLaunchMint(
     metadataAuthorityRevoked,
     metadataImmutable,
     metadataUri,
+    name: asset.metadata.name,
+    symbol: asset.metadata.symbol,
     valid,
   };
 }
