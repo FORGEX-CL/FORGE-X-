@@ -11,7 +11,10 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ mi
     new PublicKey(mint);
     const connection = new Connection(RPC, "confirmed");
     const verification = await verifyFairLaunchMint(connection, mint, 1_000_000_000n);
-    const risk = assessTokenRisk({});
+    const risk = assessTokenRisk({
+      name: verification.name,
+      symbol: verification.symbol,
+    });
 
     return NextResponse.json({
       mint: verification.mint,
