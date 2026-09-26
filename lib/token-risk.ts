@@ -5,6 +5,7 @@ export type TokenRiskInput = {
   website?: string;
   socials?: string[];
   creator?: string;
+  metadataUri?: string;
 };
 
 export type TokenRiskResult = {
@@ -48,6 +49,22 @@ export function assessTokenRisk(input: TokenRiskInput): TokenRiskResult {
   const description = normalized(input.description);
   const websiteHost = hostname(input.website);
   const flags: string[] = [];
+  if (input.metadataUri) {
+    try {
+      const metadataUrl = new URL(input.metadataUri);
+      if (metadataUrl.protocol !== "https:") {
+        score += 20;
+        flags.push("Token metadata URI is not HTTPS");
+      }
+      if (metadataUrl.username || metadataUrl.password) {
+        score += 25;
+        flags.push("Token metadata URI contains embedded credentials");
+      }
+    } catch {
+      score += 25;
+      flags.push("Token metadata URI could not be parsed");
+    }
+  }
   let score = 0;
   let impersonation = false;
 
