@@ -17,6 +17,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ mi
     const risk = assessTokenRisk({
       name: verification.name,
       symbol: verification.symbol,
+      metadataUri: verification.metadataUri,
     });
 
     return NextResponse.json({
