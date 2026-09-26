@@ -97,7 +97,7 @@ export function assessTokenRisk(input: TokenRiskInput): TokenRiskResult {
   return {
     score,
     level,
-    hold: level === "CRITICAL",
+    hold: level === "CRITICAL" || impersonation,
     impersonation,
     flags: [...new Set(flags)],
   };
