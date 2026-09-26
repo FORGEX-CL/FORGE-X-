@@ -7,6 +7,10 @@ function validHttpUrl(value: unknown, field: string) {
   if (value === undefined || value === null || value === "") return undefined;
   const url = new URL(String(value));
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`${field} must be an HTTP(S) URL`);
+  if (url.username || url.password) throw new Error(`${field} must not contain embedded credentials`);
+  if (url.hostname === "localhost" || url.hostname.endsWith(".localhost") || url.hostname === "0.0.0.0" || url.hostname === "::1") {
+    throw new Error(`${field} must not target a local host`);
+  }
   return url.toString();
 }
 
