@@ -49,6 +49,9 @@ export function assessTokenRisk(input: TokenRiskInput): TokenRiskResult {
   const description = normalized(input.description);
   const websiteHost = hostname(input.website);
   const flags: string[] = [];
+  let score = 0;
+  let impersonation = false;
+
   if (input.metadataUri) {
     try {
       const metadataUrl = new URL(input.metadataUri);
@@ -65,9 +68,6 @@ export function assessTokenRisk(input: TokenRiskInput): TokenRiskResult {
       flags.push("Token metadata URI could not be parsed");
     }
   }
-  let score = 0;
-  let impersonation = false;
-
   for (const brand of PROTECTED_BRANDS) {
     const brandKey = normalized(brand.name);
     if (!brandKey) continue;
