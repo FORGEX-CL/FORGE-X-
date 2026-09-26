@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assessTokenRisk } from "@/lib/token-risk";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -16,7 +19,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ...result,
       disclaimer: "FORGE X risk signals are heuristic screening, not a guarantee that a token is safe.",
-    });
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to assess token risk" },
