@@ -25,6 +25,9 @@ export async function POST(request: NextRequest) {
       const url = new URL(body.website);
       if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("website must be an HTTP(S) URL");
       if (url.username || url.password) throw new Error("website must not contain embedded credentials");
+      if (url.hostname === "localhost" || url.hostname.endsWith(".localhost") || url.hostname === "0.0.0.0" || url.hostname === "::1") {
+        throw new Error("website must not target a local host");
+      }
     }
     if (body.metadataUri) {
       const url = new URL(body.metadataUri);
