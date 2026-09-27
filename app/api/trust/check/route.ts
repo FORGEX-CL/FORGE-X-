@@ -6,7 +6,11 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const contentLength = Number(request.headers.get("content-length") || "0");
+    if (contentLength > 32_768) throw new Error("Request body is too large");
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 32_768) throw new Error("Request body is too large");
+    const body = JSON.parse(rawBody);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
     const textFields = ["name", "symbol", "description", "website", "creator", "metadataUri"] as const;
     for (const field of textFields) {
