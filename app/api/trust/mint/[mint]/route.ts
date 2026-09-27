@@ -20,15 +20,21 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ mi
       metadataUri: verification.metadataUri,
     });
 
+    const effectiveScore = verification.valid ? risk.score : Math.max(risk.score, 70);
+    const effectiveLevel = effectiveScore >= 80 ? "CRITICAL" : effectiveScore >= 50 ? "HIGH" : effectiveScore >= 25 ? "MEDIUM" : "LOW";
+    const flags = verification.valid
+      ? risk.flags
+      : [...risk.flags, "Mint does not satisfy FORGE X Fair Launch authority/metadata checks"];
+
     return NextResponse.json({
       mint: verification.mint,
       fairLaunch: verification,
       risk: {
         ...risk,
-        score: verification.valid ? risk.score : Math.max(risk.score, 70),
-        level: verification.valid ? risk.level : "HIGH",
+        score: effectiveScore,
+        level: effectiveLevel,
         hold: !verification.valid || risk.hold,
-        flags: verification.valid ? risk.flags : [...risk.flags, "Mint does not satisfy FORGE X Fair Launch authority/metadata checks"],
+        flags: [...new Set(flags)],
       },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
