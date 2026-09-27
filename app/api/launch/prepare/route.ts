@@ -8,16 +8,23 @@ const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const payer = new PublicKey(body.payer);
-    const supply = BigInt(body.supply);
-    const name = String(body.name || "").trim();
-    const symbol = String(body.symbol || "").trim().toUpperCase();
-    const metadataUri = String(body.metadataUri || "").trim();
+    const contentLength = Number(request.headers.get("content-length") || "0");
+    if (contentLength > 16_384) throw new Error("Request body is too large");
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 16_384) throw new Error("Request body is too large");
+    let body: unknown;
+    try { body = JSON.parse(rawBody); } catch { throw new Error("Invalid request body"); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
+    const input = body as Record<string, unknown>;
+    const payer = new PublicKey(input.payer);
+    const supply = BigInt(input.supply);
+    const name = String(input.name || "").trim();
+    const symbol = String(input.symbol || "").trim().toUpperCase();
+    const metadataUri = String(input.metadataUri || "").trim();
 
     assertFairLaunchSupply(supply);
-    if (Number(body.decimals) !== FORGE_X_FAIR_LAUNCH.decimals) throw new Error("FORGE X Fair Launch uses exactly 9 decimals");
-    if (body.revokeMintAuthority !== true || body.revokeFreezeAuthority !== true) throw new Error("FORGE X Fair Launch automatically revokes mint and freeze authority");
+    if (Number(input.decimals) !== FORGE_X_FAIR_LAUNCH.decimals) throw new Error("FORGE X Fair Launch uses exactly 9 decimals");
+    if (input.revokeMintAuthority !== true || input.revokeFreezeAuthority !== true) throw new Error("FORGE X Fair Launch automatically revokes mint and freeze authority");
     if (!metadataUri) throw new Error("Metadata URI is required for Fair Launch");
     if (!process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID) throw new Error("FORGE X Fair Launch program ID is not configured");
 
