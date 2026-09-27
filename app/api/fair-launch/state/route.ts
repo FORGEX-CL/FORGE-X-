@@ -42,8 +42,8 @@ export async function GET(request: NextRequest) {
       feeReceiver: feeReceiver.toBase58(),
       feeReceiverConfigured: configured?.toBase58() ?? null,
       feeReceiverMatchesConfigured: configured ? feeReceiver.equals(configured) : null,
-    });
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to read Fair Launch state" }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to read Fair Launch state" }, { status: 400, headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 }
