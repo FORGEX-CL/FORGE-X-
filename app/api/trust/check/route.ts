@@ -21,7 +21,18 @@ export async function POST(request: NextRequest) {
     const socials = Array.isArray(body.socials) ? body.socials : undefined;
     if (socials?.some((value: unknown) => typeof value !== "string" || value.length > 500)) throw new Error("Invalid social link");
 
-    if (body.website) {\n      const url = new URL(body.website);\n      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("website must be an HTTP(S) URL");\n      if (url.username || url.password) throw new Error("website must not contain embedded credentials");\n    }\n    if (body.metadataUri) {\n      const url = new URL(body.metadataUri);\n      if (url.protocol !== "https:") throw new Error("metadataUri must use HTTPS");\n      if (url.username || url.password) throw new Error("metadataUri must not contain embedded credentials");\n    }\n\n    const result = assessTokenRisk({
+    if (body.website) {
+      const url = new URL(body.website);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("website must be an HTTP(S) URL");
+      if (url.username || url.password) throw new Error("website must not contain embedded credentials");
+    }
+    if (body.metadataUri) {
+      const url = new URL(body.metadataUri);
+      if (url.protocol !== "https:") throw new Error("metadataUri must use HTTPS");
+      if (url.username || url.password) throw new Error("metadataUri must not contain embedded credentials");
+    }
+
+    const result = assessTokenRisk({
       name: typeof body.name === "string" ? body.name : undefined,
       symbol: typeof body.symbol === "string" ? body.symbol : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
