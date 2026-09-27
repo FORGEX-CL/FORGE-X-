@@ -13,9 +13,17 @@ export async function POST(request: NextRequest) {
     const body = JSON.parse(rawBody);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
     const textFields = ["name", "symbol", "description", "website", "creator", "metadataUri"] as const;
+    const maxLengths: Record<(typeof textFields)[number], number> = {
+      name: 128,
+      symbol: 32,
+      description: 1000,
+      website: 2048,
+      creator: 64,
+      metadataUri: 2048,
+    };
     for (const field of textFields) {
       if (body[field] !== undefined && typeof body[field] !== "string") throw new Error(`${field} must be a string`);
-      if (typeof body[field] === "string" && body[field].length > 1000) throw new Error(`${field} is too long`);
+      if (typeof body[field] === "string" && body[field].length > maxLengths[field]) throw new Error(`${field} is too long`);
     }
     if (Array.isArray(body.socials) && body.socials.length > 10) throw new Error("Too many social links");
     const socials = Array.isArray(body.socials) ? body.socials : undefined;
