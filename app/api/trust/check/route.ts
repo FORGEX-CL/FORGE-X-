@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { PublicKey } from "@solana/web3.js";
 import { assessTokenRisk } from "@/lib/token-risk";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,14 @@ export async function POST(request: NextRequest) {
       const url = new URL(body.metadataUri);
       if (url.protocol !== "https:") throw new Error("metadataUri must use HTTPS");
       if (url.username || url.password) throw new Error("metadataUri must not contain embedded credentials");
+    }
+
+    if (body.creator) {
+      try {
+        new PublicKey(body.creator);
+      } catch {
+        throw new Error("creator must be a valid Solana public key");
+      }
     }
 
     const result = assessTokenRisk({
