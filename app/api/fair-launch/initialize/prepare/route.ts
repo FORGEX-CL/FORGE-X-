@@ -13,9 +13,16 @@ function key(value: unknown, field: string): PublicKey {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const mint = key(body.mint, "mint");
-    const developer = key(body.developer, "developer");
+    const contentLength = Number(request.headers.get("content-length") || "0");
+    if (contentLength > 16_384) throw new Error("Request body is too large");
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 16_384) throw new Error("Request body is too large");
+    let body: unknown;
+    try { body = JSON.parse(rawBody); } catch { throw new Error("Invalid request body"); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
+    const input = body as Record<string, unknown>;
+    const mint = key(input.mint, "mint");
+    const developer = key(input.developer, "developer");
     const feeReceiverValue = process.env.FORGE_X_FEE_RECEIVER || process.env.NEXT_PUBLIC_FORGE_X_FEE_RECEIVER;
     const feeReceiver = key(feeReceiverValue, "FORGE_X_FEE_RECEIVER");
     if (!process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID) throw new Error("FORGE X Fair Launch program ID is not configured");
