@@ -3,13 +3,24 @@ import { DEFAULT_FAIR_LAUNCH, applyTradeFee, canOpenPublicTrading, hasGraduated,
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const side = body.side === "sell" ? "sell" : "buy";
-    const amount = BigInt(String(body.amount || "0"));
-    const virtualSol = BigInt(String(body.virtualSol || DEFAULT_FAIR_LAUNCH.virtualSolReserve));
-    const virtualTokens = BigInt(String(body.virtualTokens || DEFAULT_FAIR_LAUNCH.virtualTokenReserve));
-    const developerBuy = BigInt(String(body.developerBuy || "0"));
-    const realSolRaised = BigInt(String(body.realSolRaised || "0"));
+    const contentLength = Number(request.headers.get("content-length") || "0");
+    if (contentLength > 16_384) throw new Error("Request body is too large");
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 16_384) throw new Error("Request body is too large");
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      throw new Error("Invalid request body");
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
+    const input = body as Record<string, unknown>;
+    const side = input.side === "sell" ? "sell" : "buy";
+    const amount = BigInt(String(input.amount || "0"));
+    const virtualSol = BigInt(String(input.virtualSol || DEFAULT_FAIR_LAUNCH.virtualSolReserve));
+    const virtualTokens = BigInt(String(input.virtualTokens || DEFAULT_FAIR_LAUNCH.virtualTokenReserve));
+    const developerBuy = BigInt(String(input.developerBuy || "0"));
+    const realSolRaised = BigInt(String(input.realSolRaised || "0"));
     if (amount <= 0n) throw new Error("Amount must be positive");
     if (side === "buy") {
       const fee = applyTradeFee(amount, DEFAULT_FAIR_LAUNCH.tradeFeeBps);
