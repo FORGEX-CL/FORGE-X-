@@ -31,18 +31,29 @@ function slippage(value: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const trader = key(body.trader, "trader");
-    const poolId = key(body.poolId, "poolId");
-    const inputMint = key(body.inputMint, "inputMint");
-    const inputAmount = amount(body.amount);
+    const contentLength = Number(request.headers.get("content-length") || "0");
+    if (contentLength > 16_384) throw new Error("Request body is too large");
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 16_384) throw new Error("Request body is too large");
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      throw new Error("Invalid request body");
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
+    const input = body as Record<string, unknown>;
+    const trader = key(input.trader, "trader");
+    const poolId = key(input.poolId, "poolId");
+    const inputMint = key(input.inputMint, "inputMint");
+    const inputAmount = amount(input.amount);
     const prepared = await prepareRaydiumCpmmSwap({
       connection: new Connection(SOLANA_RPC_URL, "confirmed"),
       trader,
       poolId,
       inputMint,
       inputAmount,
-      slippage: slippage(body.slippage),
+      slippage: slippage(input.slippage),
     });
 
     return NextResponse.json({
