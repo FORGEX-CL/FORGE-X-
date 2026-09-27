@@ -32,8 +32,18 @@ export async function buildTokenLaunchTransaction(
   if (!/^[A-Z0-9]{1,10}$/.test(config.symbol)) throw new Error("Symbol must be 1-10 uppercase letters/numbers");
   if (!config.name.trim()) throw new Error("Token name is required");
   if (config.name.length > 32) throw new Error("Token name must be 32 characters or fewer");
-  if (!config.metadataUri.trim()) throw new Error("Metadata URI is required");
-  if (config.metadataUri.length > 200) throw new Error("Metadata URI is too long");
+  const metadataUri = config.metadataUri.trim();
+  if (!metadataUri) throw new Error("Metadata URI is required");
+  if (metadataUri.length > 200) throw new Error("Metadata URI is too long");
+  try {
+    const parsed = new URL(metadataUri);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:" && parsed.protocol !== "ipfs:") throw new Error("Unsupported metadata URI scheme");
+    if (parsed.username || parsed.password) throw new Error("Metadata URI must not contain embedded credentials");
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") && (parsed.hostname === "localhost" || parsed.hostname.endsWith(".localhost") || parsed.hostname === "0.0.0.0" || parsed.hostname === "::1")) throw new Error("Metadata URI must not target a local host");
+  } catch (error) {
+    if (error instanceof Error && error.message !== "Unsupported metadata URI scheme" && error.message !== "Metadata URI must not contain embedded credentials" && error.message !== "Metadata URI must not target a local host") throw new Error("Metadata URI is invalid");
+    throw error;
+  }
   if (!Number.isInteger(config.decimals) || config.decimals < 0 || config.decimals > 9) throw new Error("Decimals must be 0-9");
   if (config.supply <= 0n) throw new Error("Supply must be greater than zero");
   if (!config.revokeMintAuthority || !config.revokeFreezeAuthority) throw new Error("FORGE X launch requires mint and freeze authority revocation");
@@ -69,7 +79,7 @@ export async function buildTokenLaunchTransaction(
     updateAuthority: publicKey(payer.toBase58()),
     name: config.name.trim(),
     symbol: config.symbol,
-    uri: config.metadataUri.trim(),
+    uri: metadataUri,
     sellerFeeBasisPoints: percentAmount(0),
     tokenStandard: TokenStandard.Fungible,
     isMutable: true,
