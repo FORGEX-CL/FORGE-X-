@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
     }
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
     const input = body as Record<string, unknown>;
-    const side = input.side === "sell" ? "sell" : "buy";
+    const side = input.side === "sell" ? "sell" : input.side === "buy" ? "buy" : null;
+    if (!side) throw new Error("side must be buy or sell");
     const amount = BigInt(String(input.amount || "0"));
     const virtualSol = BigInt(String(input.virtualSol || DEFAULT_FAIR_LAUNCH.virtualSolReserve));
     const virtualTokens = BigInt(String(input.virtualTokens || DEFAULT_FAIR_LAUNCH.virtualTokenReserve));
@@ -25,13 +26,13 @@ export async function POST(request: NextRequest) {
     if (side === "buy") {
       const fee = applyTradeFee(amount, DEFAULT_FAIR_LAUNCH.tradeFeeBps);
       const tokensOut = quoteBuy(amount - fee, virtualSol, virtualTokens);
-      return NextResponse.json({ side, amount: amount.toString(), fee: fee.toString(), tokensOut: tokensOut.toString(), publicTradingOpen: canOpenPublicTrading(developerBuy, DEFAULT_FAIR_LAUNCH), graduated: hasGraduated(realSolRaised + amount - fee, DEFAULT_FAIR_LAUNCH) });
+      return NextResponse.json({ side, amount: amount.toString(), fee: fee.toString(), tokensOut: tokensOut.toString(), publicTradingOpen: canOpenPublicTrading(developerBuy, DEFAULT_FAIR_LAUNCH), graduated: hasGraduated(realSolRaised + amount - fee, DEFAULT_FAIR_LAUNCH) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
     const grossSolOut = quoteSell(amount, virtualSol, virtualTokens);
     const fee = applyTradeFee(grossSolOut, DEFAULT_FAIR_LAUNCH.tradeFeeBps);
-    return NextResponse.json({ side, amount: amount.toString(), grossSolOut: grossSolOut.toString(), fee: fee.toString(), netSolOut: (grossSolOut - fee).toString(), graduated: hasGraduated(realSolRaised, DEFAULT_FAIR_LAUNCH) });
+    return NextResponse.json({ side, amount: amount.toString(), grossSolOut: grossSolOut.toString(), fee: fee.toString(), netSolOut: (grossSolOut - fee).toString(), graduated: hasGraduated(realSolRaised, DEFAULT_FAIR_LAUNCH) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid quote" }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid quote" }, { status: 400, headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 }
 
@@ -42,8 +43,8 @@ export async function GET(request: NextRequest) {
     const virtualSol = BigInt(p.get("virtualSol") || DEFAULT_FAIR_LAUNCH.virtualSolReserve.toString());
     const virtualTokens = BigInt(p.get("virtualTokens") || DEFAULT_FAIR_LAUNCH.virtualTokenReserve.toString());
     const tokensOut = quoteBuy(solIn, virtualSol, virtualTokens);
-    return NextResponse.json({ solIn: solIn.toString(), tokensOut: tokensOut.toString() });
+    return NextResponse.json({ solIn: solIn.toString(), tokensOut: tokensOut.toString() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid curve quote" }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid curve quote" }, { status: 400, headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 }
