@@ -7,12 +7,7 @@ import { WalletButton } from "../components/WalletButton";
 import { TokenLaunchSigner } from "../components/TokenLaunchSigner";
 import { AdvancedLaunchPanel } from "../components/AdvancedLaunchPanel";
 
-const steps = [
-  ["01", "Token details", "Name, symbol and metadata are supplied by the creator."],
-  ["02", "Fair Launch", "Bonding-curve launches use the fixed FORGE X supply and launch rules."],
-  ["03", "Advanced Launch", "Configure token authorities and initial liquidity before signing."],
-  ["04", "Review & sign", "The connected wallet remains the authority for every funded action."],
-];
+const steps = [["01","Token details"],["02","Fair Launch"],["03","Advanced Launch"],["04","Review & sign"]];
 
 const rules = [
   ["Fair supply", "1,000,000,000"],
@@ -47,11 +42,11 @@ export default function Launch() {
         />
 
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-          {steps.map(([n, t, d]) => (
+          {steps.map(([n, t]) => (
             <Card key={n}>
               <span className="text-xs font-bold text-[#8b7cff]">{n}</span>
               <h2 className="mt-5 text-xl font-bold">{t}</h2>
-              <p className="mt-2 text-sm leading-6 text-white/45">{d}</p>
+              
             </Card>
           ))}
         </div>
@@ -74,10 +69,10 @@ export default function Launch() {
                 </div>
               ))}
             </div>
-            <div className="mt-5 rounded-xl border border-[#8b7cff]/15 bg-[#8b7cff]/5 p-4 text-xs leading-5 text-white/55">
+            <div className="hidden mt-5 rounded-xl border border-[#8b7cff]/15 bg-[#8b7cff]/5 p-4 text-xs leading-5 text-white/55">
               Fair Launch requires mint authority, freeze authority and metadata update authority to be revoked, with metadata made immutable in the launch transaction.
             </div>
-            <p className="mt-4 text-xs leading-5 text-white/35">Current environment is controlled by the configured Solana cluster. Mainnet release requires successful Devnet end-to-end testing and security review.</p>
+            
           </Card>
         </div>
       </main>
