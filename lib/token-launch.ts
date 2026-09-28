@@ -104,6 +104,16 @@ export async function buildTokenLaunchTransaction(
   tx.lastValidBlockHeight = latest.lastValidBlockHeight;
   tx.partialSign(mint);
 
+  const simulation = await connection.simulateTransaction(tx, {
+    commitment: "confirmed",
+    sigVerify: false,
+    replaceRecentBlockhash: true,
+  });
+  if (simulation.value.err) {
+    const logs = simulation.value.logs?.filter(Boolean).slice(-8).join(" | ");
+    throw new Error(`Token launch simulation failed${logs ? `: ${logs}` : ""}`);
+  }
+
   return {
     transaction: tx,
     mint: mint.publicKey.toBase58(),
