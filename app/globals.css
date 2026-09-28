@@ -53,7 +53,7 @@ h1,h2,h3,h4,p{overflow-wrap:anywhere}
 
 /* Preserve readable layouts on small phones without forcing horizontal scrolling. */
 @media (max-width:640px){
-  .forge-content{width:min(100% - 1.25rem,80rem)}
+  .forge-content{width:min(100% - 1rem,80rem)}\n  body{font-size:15px}\n  button,a{touch-action:manipulation}
   .forge-card{border-radius:1rem}
   .forge-card > *{min-width:0}
   .break-mobile{overflow-wrap:anywhere;word-break:break-word}
