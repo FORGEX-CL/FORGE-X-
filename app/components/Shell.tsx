@@ -11,7 +11,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#070707]/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
-          <Link href="/" className="shrink-0 text-lg font-black tracking-[0.18em] sm:text-xl sm:tracking-[0.22em]">FORGE <span className="text-[#f5c542]">X</span></Link>
+          <Link href="/" className="shrink-0 text-lg font-black tracking-[0.18em] sm:text-xl sm:tracking-[0.22em]">FORGE <span className="text-[#8b7cff]">X</span></Link>
           <span className={`hidden rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] sm:inline-flex ${isMainnet ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-300" : "border-amber-300/20 bg-amber-300/5 text-amber-200"}`}>
             {isMainnet ? "Mainnet" : `${cluster} · Test`}
           </span>
@@ -24,10 +24,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <div className="px-3 pb-2 pt-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">Navigate</div>
               {nav.map(([label, href]) => <Link key={href} href={href} className="block rounded-xl px-3 py-2.5 text-sm text-white/65 transition hover:bg-white/[0.05] hover:text-white">{label}</Link>)}
               <div className="my-2 border-t border-white/10" />
-              <Link href="/ai" className="block rounded-xl px-3 py-2.5 text-sm font-semibold text-[#f5c542] transition hover:bg-[#f5c542]/10">FORGE AI</Link>
+              <Link href="/ai" className="block rounded-xl px-3 py-2.5 text-sm font-semibold text-[#8b7cff] transition hover:bg-[#8b7cff]/10">FORGE AI</Link>
             </div>
           </details>
-          <Link href="/ai" className="hidden rounded-full border border-[#f5c542]/20 bg-[#f5c542]/5 px-3 py-2 text-xs font-bold text-[#f5c542] transition hover:bg-[#f5c542]/10 sm:inline-flex">FORGE AI</Link>
+          <Link href="/ai" className="hidden rounded-full border border-[#8b7cff]/20 bg-[#8b7cff]/5 px-3 py-2 text-xs font-bold text-[#8b7cff] transition hover:bg-[#8b7cff]/10 sm:inline-flex">FORGE AI</Link>
           <WalletButton />
         </div>
       </div>
@@ -38,5 +38,5 @@ export function Shell({ children }: { children: React.ReactNode }) {
   </div>;
 }
 
-export function SectionTitle({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) { return <div className="mb-8"><div className="text-xs font-bold uppercase tracking-[0.22em] text-[#f5c542]">{eyebrow}</div><h1 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">{title}</h1><p className="mt-3 max-w-2xl text-white/50">{text}</p></div>; }
+export function SectionTitle({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) { return <div className="mb-8"><div className="text-xs font-bold uppercase tracking-[0.22em] text-[#8b7cff]">{eyebrow}</div><h1 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">{title}</h1><p className="mt-3 max-w-2xl text-white/50">{text}</p></div>; }
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <div className={`rounded-2xl border border-white/10 bg-white/[0.025] p-6 ${className}`}>{children}</div>; }
