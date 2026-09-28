@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (!side) throw new Error("side must be buy or sell");
     const amount = BigInt(String(input.amount || "0"));
     if (amount <= 0n) throw new Error("Trade amount must be positive");
-    const feeReceiverValue = process.env.FORGE_X_FEE_RECEIVER || process.env.NEXT_PUBLIC_FORGE_X_FEE_RECEIVER;
+    const feeReceiverValue = process.env.FORGE_X_FEE_RECEIVER;
     const feeReceiver = key(feeReceiverValue, "FORGE_X_FEE_RECEIVER");
 
     const programId = FORGE_X_FAIR_LAUNCH_PROGRAM_ID;
