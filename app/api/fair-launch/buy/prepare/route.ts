@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     transaction.feePayer = developer;
     transaction.recentBlockhash = latest.blockhash;
 
-    const simulation = await connection.simulateTransaction(transaction, { commitment: "confirmed", sigVerify: false, replaceRecentBlockhash: true });
+    const simulation = await connection.simulateTransaction(transaction);
     if (simulation.value.err) throw new Error("Developer buy simulation failed");
     return NextResponse.json({
       transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"),
