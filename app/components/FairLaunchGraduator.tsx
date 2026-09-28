@@ -78,15 +78,14 @@ export function FairLaunchGraduator() {
           tokenBaseUnits: state.virtualTokenReserveBaseUnits,
         }),
       });
-      const data = await response.json() as { transaction?: string; poolId?: string; error?: string };
-      if (!response.ok || !data.transaction || !data.poolId) throw new Error(data.error || "Unable to prepare Raydium graduation");
+      const data = await response.json() as { transaction?: string; poolId?: string; lastValidBlockHeight?: number; error?: string };
+      if (!response.ok || !data.transaction || !data.poolId || typeof data.lastValidBlockHeight !== "number") throw new Error(data.error || "Unable to prepare Raydium graduation");
       setPoolId(data.poolId);
       const transaction = VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64"));
       if (!transaction.message.staticAccountKeys[0]?.equals(wallet.publicKey)) throw new Error("Graduation fee payer does not match connected developer wallet");
       const expectedMessage = Buffer.from(transaction.message.serialize());
       const connection = new Connection(RPC, "confirmed");
-      const latestBlockHeight = await connection.getBlockHeight("confirmed");
-      if (latestBlockHeight > (transaction.message.recentBlockhash ? Number.MAX_SAFE_INTEGER : 0)) throw new Error("Graduation transaction is invalid");
+      if (await connection.getBlockHeight("confirmed") > data.lastValidBlockHeight) throw new Error("Graduation transaction has expired");
       setStatus("awaiting_signature");
       const signed = await wallet.signTransaction(transaction);
       const signedMessage = Buffer.from(signed.message.serialize());
