@@ -263,7 +263,15 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
     input.connection,
   );
 
-  const rebuilt = await builder.versionBuild({ txVersion: TxVersion.V0, extInfo, lookupTableAddress: builder.AllTxData.lookupTableAddress });
+  // Pin the exact blockhash used by the prepared transaction. Raydium's V0 builder
+  // accepts a caller-supplied recentBlockhash through extInfo; without this, fetching
+  // lastValidBlockHeight separately can describe a different blockhash than the tx.
+  const latest = await input.connection.getLatestBlockhash("confirmed");
+  const rebuilt = await builder.versionBuild({
+    txVersion: TxVersion.V0,
+    extInfo: { ...extInfo, recentBlockhash: latest.blockhash },
+    lookupTableAddress: builder.AllTxData.lookupTableAddress,
+  });
   if (!(rebuilt.transaction instanceof VersionedTransaction)) throw new Error("Raydium CPMM graduation did not produce a versioned transaction");
 
   const simulation = await input.connection.simulateTransaction(rebuilt.transaction, {
@@ -283,6 +291,6 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
     programId,
     solLamports: input.solLamports,
     tokenBaseUnits: input.tokenBaseUnits,
-    lastValidBlockHeight: (await input.connection.getLatestBlockhash("confirmed")).lastValidBlockHeight,
+    lastValidBlockHeight: latest.lastValidBlockHeight,
   };
 }
