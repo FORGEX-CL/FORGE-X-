@@ -21,7 +21,17 @@ export type SolanaWalletProvider = {
 
 let activeWallet: StandardWallet | null = null;
 let activeAccount: StandardAccount | null = null;
-let mobileRegistrationPromise: Promise<void> | null = null;\n\nfunction rememberConnection(wallet: StandardWallet, account: StandardAccount) {\n  activeWallet = wallet;\n  activeAccount = account;\n}\n\nfunction clearConnection() {\n  activeWallet = null;\n  activeAccount = null;\n}
+let mobileRegistrationPromise: Promise<void> | null = null;
+
+function rememberConnection(wallet: StandardWallet, account: StandardAccount) {
+  activeWallet = wallet;
+  activeAccount = account;
+}
+
+function clearConnection() {
+  activeWallet = null;
+  activeAccount = null;
+}
 
 function chainId() {
   return process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
