@@ -85,11 +85,11 @@ export default function Market() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search token, symbol or mint"
-            className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-[#f5c542]/50"
+            className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-[#8b7cff]/50"
           />
           <button
             disabled={loading}
-            className="rounded-xl bg-[#f5c542] px-6 py-3 text-sm font-bold text-black disabled:opacity-50"
+            className="rounded-xl bg-[#8b7cff] px-6 py-3 text-sm font-bold text-black disabled:opacity-50"
           >
             {loading ? "Searching…" : "Search"}
           </button>
@@ -167,7 +167,7 @@ export default function Market() {
                       {risk?.score != null ? ` · ${risk.score}/100` : ""}
                     </div>
                     {pair.forgeStatus && (
-                      <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-[#f5c542]">
+                      <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-[#8b7cff]">
                         FORGE {pair.forgeStatus.replaceAll("_", " ")}
                       </div>
                     )}
@@ -187,7 +187,7 @@ export default function Market() {
                   {canTrade ? (
                     <Link
                       href={href}
-                      className="inline-flex w-fit rounded-lg border border-[#f5c542]/30 px-3 py-2 text-xs font-bold text-[#f5c542] hover:bg-[#f5c542]/10"
+                      className="inline-flex w-fit rounded-lg border border-[#8b7cff]/30 px-3 py-2 text-xs font-bold text-[#8b7cff] hover:bg-[#8b7cff]/10"
                     >
                       {forgeLive ? "Trade on FORGE" : "Verify & trade"}
                     </Link>
