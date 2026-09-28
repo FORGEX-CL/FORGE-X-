@@ -36,6 +36,7 @@ export type PreparedGraduationTransaction = {
   programId: PublicKey;
   solLamports: bigint;
   tokenBaseUnits: bigint;
+  lastValidBlockHeight: number;
 };
 
 function readU64(data: Buffer, offset: number): bigint {
@@ -282,5 +283,6 @@ export async function prepareRaydiumCpmmGraduation(input: GraduationTransactionI
     programId,
     solLamports: input.solLamports,
     tokenBaseUnits: input.tokenBaseUnits,
+    lastValidBlockHeight: (await input.connection.getLatestBlockhash("confirmed")).lastValidBlockHeight,
   };
 }
