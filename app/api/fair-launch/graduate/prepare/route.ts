@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       solLamports: prepared.solLamports.toString(),
       tokenBaseUnits: prepared.tokenBaseUnits.toString(),
       cluster: CLUSTER,
+      lastValidBlockHeight: prepared.lastValidBlockHeight,
       atomic: true,
       instructions: ["Fair Launch PDA migration", "Raydium CPMM pool creation"],
     });
