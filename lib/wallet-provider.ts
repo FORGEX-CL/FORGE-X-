@@ -150,7 +150,8 @@ export async function connectWallet(wallet?: StandardWallet) {
   rememberConnection(target, account);
   return exposeCompatProvider(target, account);
 }
-\nexport function getBrowserWallet(): SolanaWalletProvider {
+
+export function getBrowserWallet(): SolanaWalletProvider {
   if (typeof window === "undefined") throw new Error("Wallet is only available in the browser");
   if (activeWallet && activeAccount) return exposeCompatProvider(activeWallet, activeAccount);
   const provider = (window as Window & { solana?: SolanaWalletProvider }).solana;
