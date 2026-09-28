@@ -16,8 +16,12 @@ export async function POST(request: NextRequest) {
     try { body = JSON.parse(rawBody); } catch { throw new Error("Invalid request body"); }
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request body");
     const input = body as Record<string, unknown>;
-    const payer = new PublicKey(input.payer);
-    const supply = BigInt(input.supply);
+    const payerValue = input.payer;
+    if (typeof payerValue !== "string" || !payerValue.trim()) throw new Error("payer is required");
+    const payer = new PublicKey(payerValue);
+    const supplyValue = input.supply;
+    if (typeof supplyValue !== "string" && typeof supplyValue !== "number" && typeof supplyValue !== "bigint") throw new Error("supply is required");
+    const supply = BigInt(supplyValue);
     const name = String(input.name || "").trim();
     const symbol = String(input.symbol || "").trim().toUpperCase();
     const metadataUri = String(input.metadataUri || "").trim();
