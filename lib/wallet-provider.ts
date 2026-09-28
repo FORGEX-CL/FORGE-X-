@@ -148,6 +148,10 @@ export function getBrowserWallet(): SolanaWalletProvider {
   return provider;
 }
 
+export function assertWalletCanSign(provider: SolanaWalletProvider): asserts provider is SolanaWalletProvider & { signTransaction: <T extends SignableTransaction>(transaction: T) => Promise<T> } {
+  if (!provider.signTransaction) throw new Error("Connected wallet does not support transaction signing");
+}
+
 export async function connectBrowserWallet() {
   const provider = await connectWallet();
   const address = provider.publicKey?.toBase58();
