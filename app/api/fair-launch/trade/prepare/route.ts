@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
-import { buildFairLaunchBuyWithAta, buildFairLaunchSell } from "@/lib/fair-launch-program";
+import { buildFairLaunchBuyWithAta, buildFairLaunchSell, fairLaunchStatePda, FORGE_X_FAIR_LAUNCH_PROGRAM_ID } from "@/lib/fair-launch-program";
+import { validateFairLaunchMint } from "@/lib/launch-validation";
 
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 
@@ -32,14 +33,25 @@ export async function POST(request: NextRequest) {
     const feeReceiverValue = process.env.FORGE_X_FEE_RECEIVER || process.env.NEXT_PUBLIC_FORGE_X_FEE_RECEIVER;
     const feeReceiver = key(feeReceiverValue, "FORGE_X_FEE_RECEIVER");
 
+    const programId = FORGE_X_FAIR_LAUNCH_PROGRAM_ID;
+    if (!programId) throw new Error("FORGE X Fair Launch program ID is not configured");
     const connection = new Connection(RPC, "confirmed");
+    await validateFairLaunchMint(connection, mint.toBase58());
+    const stateAddress = fairLaunchStatePda(mint, programId);
+    const stateInfo = await connection.getAccountInfo(stateAddress, "confirmed");
+    if (!stateInfo || !stateInfo.owner.equals(programId) || stateInfo.data.length !== 114) throw new Error("Fair Launch state is not initialized correctly");
+    const state = Buffer.from(stateInfo.data);
+    if (state[0] !== 3 || state[33] !== 1) throw new Error("Fair Launch is not open for public trading");
+    if (!new PublicKey(state.subarray(82, 114)).equals(feeReceiver)) throw new Error("Fee receiver does not match Fair Launch state");
     const latest = await connection.getLatestBlockhash("confirmed");
     const instructions = side === "buy" ? buildFairLaunchBuyWithAta(mint, trader, amount, feeReceiver) : [buildFairLaunchSell(mint, trader, amount, feeReceiver)];
     const transaction = new Transaction().add(...instructions);
     transaction.feePayer = trader;
     transaction.recentBlockhash = latest.blockhash;
 
-    return NextResponse.json({ transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"), mint: mint.toBase58(), trader: trader.toBase58(), side, amount: amount.toString(), lastValidBlockHeight: latest.lastValidBlockHeight });
+    const simulation = await connection.simulateTransaction(transaction);
+    if (simulation.value.err) throw new Error("Fair Launch trade simulation failed");
+    return NextResponse.json({ transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"), mint: mint.toBase58(), trader: trader.toBase58(), side, amount: amount.toString(), lastValidBlockHeight: latest.lastValidBlockHeight }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare trade" }, { status: 400 });
   }
