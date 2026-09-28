@@ -20,6 +20,6 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --manifest-path programs/forge-x-fair-launch/Cargo.toml
-      - run: npm ci --no-audit --no-fund
+      - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
