@@ -1,13 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+
 import { Shell, SectionTitle, Card } from "../components/Shell";
 import { WalletButton } from "../components/WalletButton";
 import { TokenLaunchSigner } from "../components/TokenLaunchSigner";
-import { AdvancedLaunchPanel } from "../components/AdvancedLaunchPanel";
 
-const steps = [["01","Token details"],["02","Fair Launch"],["03","Advanced Launch"],["04","Review & sign"]];
+const steps = [["01","Token details"],["02","Fair Launch"],["03","Review & sign"]];
 
 const rules = [
   ["Fair supply", "1,000,000,000"],
@@ -19,7 +18,6 @@ const rules = [
 ];
 
 export default function Launch() {
-  const [mode, setMode] = useState<"fair" | "advanced">("fair");
 
   return (
     <Shell>
@@ -37,8 +35,7 @@ export default function Launch() {
 
         <SectionTitle
           eyebrow="Launch"
-          title="Choose how the token enters the market."
-          text="Fair Launch gives creators a controlled bonding-curve path. Advanced Launch exposes the token and initial-liquidity configuration before wallet signing."
+          title="Launch your token."
         />
 
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
@@ -53,11 +50,10 @@ export default function Launch() {
 
         <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_.8fr]">
           <div>
-            <div className="mb-3 grid grid-cols-2 rounded-xl border border-white/10 bg-white/[.02] p-1">
-              <button type="button" onClick={() => setMode("fair")} className={`rounded-lg px-4 py-3 text-sm font-bold ${mode === "fair" ? "bg-[#8b7cff] text-black" : "text-white/45"}`}>Fair Launch</button>
-              <button type="button" onClick={() => setMode("advanced")} className={`rounded-lg px-4 py-3 text-sm font-bold ${mode === "advanced" ? "bg-[#8b7cff] text-black" : "text-white/45"}`}>Advanced Launch</button>
+            <div className="mb-3 rounded-xl border border-white/10 bg-white/[.02] p-1">
+              <div className="rounded-lg bg-[#8b7cff] px-4 py-3 text-center text-sm font-bold text-black">Fair Launch</div>
             </div>
-            {mode === "fair" ? <TokenLaunchSigner /> : <AdvancedLaunchPanel />}
+            <TokenLaunchSigner />
           </div>
 
           <Card>
