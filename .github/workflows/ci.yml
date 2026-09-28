@@ -12,6 +12,8 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,13 +23,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --manifest-path programs/forge-x-fair-launch/Cargo.toml
       - run: npm install --no-audit --no-fund
-      - name: Capture resolved dependency lock
-        run: test -f package-lock.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: forge-x-package-lock
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit resolved dependency lock
+        run: |
+          git config user.name "FORGE X CI"
+          git config user.email "ci@forge-x.local"
+          git add package-lock.json
+          git commit -m "chore: add npm dependency lock"
+          git push origin HEAD:main
       - run: npm run lint
       - run: npm run build
