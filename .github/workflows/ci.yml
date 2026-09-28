@@ -21,5 +21,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --manifest-path programs/forge-x-fair-launch/Cargo.toml
       - run: npm install --no-audit --no-fund
+      - name: Capture resolved dependency lock
+        run: test -f package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forge-x-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
       - run: npm run lint
       - run: npm run build
