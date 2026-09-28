@@ -21,7 +21,7 @@ export type SolanaWalletProvider = {
 
 let activeWallet: StandardWallet | null = null;
 let activeAccount: StandardAccount | null = null;
-let mobileRegistrationPromise: Promise<void> | null = null;
+let mobileRegistrationPromise: Promise<void> | null = null;\n\nfunction rememberConnection(wallet: StandardWallet, account: StandardAccount) {\n  activeWallet = wallet;\n  activeAccount = account;\n}\n\nfunction clearConnection() {\n  activeWallet = null;\n  activeAccount = null;\n}
 
 function chainId() {
   return process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
@@ -121,26 +121,26 @@ export async function connectWallet(wallet?: StandardWallet) {
 
   const candidates = await listSolanaWallets();
   const target = wallet ?? candidates[0];
-  if (target) {
-    const connectFeature = target.features["standard:connect"] as { connect: (options?: { silent?: boolean }) => Promise<{ accounts: readonly StandardAccount[] }> };
-    const result = await connectFeature.connect();
-    const account = result.accounts?.[0] as StandardAccount | undefined;
-    if (!account) throw new Error("Wallet connected without a Solana account");
-    activeWallet = target;
-    activeAccount = account;
-    return exposeCompatProvider(target, account);
+  if (!target) {
+    const injected = typeof window !== "undefined" ? (window as Window & { solana?: SolanaWalletProvider }).solana : undefined;
+    if (injected?.connect) {
+      const result = await injected.connect();
+      if (result.publicKey) {
+        activeAccount = { address: result.publicKey.toBase58(), chains: [chainId()] };
+        return injected;
+      }
+    }
+    throw new Error("No compatible Solana wallet found. Install Phantom, Solflare, Backpack, or another Solana wallet.");
   }
 
-  const injected = typeof window !== "undefined" ? (window as Window & { solana?: SolanaWalletProvider }).solana : undefined;
-  if (injected?.connect) {
-    const result = await injected.connect();
-    if (result.publicKey) return injected;
-  }
-
-  throw new Error("No compatible Solana wallet found. Install Phantom, Solflare, Backpack, or a Mobile Wallet Adapter wallet.");
+  const connectFeature = target.features["standard:connect"] as { connect: (options?: { silent?: boolean }) => Promise<{ accounts: readonly StandardAccount[] }> };
+  const result = await connectFeature.connect();
+  const account = result.accounts?.[0] as StandardAccount | undefined;
+  if (!account) throw new Error("Wallet connected without a Solana account");
+  rememberConnection(target, account);
+  return exposeCompatProvider(target, account);
 }
-
-export function getBrowserWallet(): SolanaWalletProvider {
+\nexport function getBrowserWallet(): SolanaWalletProvider {
   if (typeof window === "undefined") throw new Error("Wallet is only available in the browser");
   if (activeWallet && activeAccount) return exposeCompatProvider(activeWallet, activeAccount);
   const provider = (window as Window & { solana?: SolanaWalletProvider }).solana;
