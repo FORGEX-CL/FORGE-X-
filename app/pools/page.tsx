@@ -15,7 +15,7 @@ export default function Pools() {
         <div className="mt-5 space-y-5">
           <PoolDiscovery />
           <Card>
-            <p className="text-xs font-bold uppercase tracking-[.2em] text-[#f5c542]">Security rule</p>
+            <p className="text-xs font-bold uppercase tracking-[.2em] text-[#8b7cff]">Security rule</p>
             <h2 className="mt-2 text-xl font-black">No “verified” without chain proof</h2>
             <p className="mt-2 text-sm leading-6 text-white/45">A successful wallet signature is not enough. Graduation requires the Fair Launch state to be MIGRATED and the resulting pool account to be owned by the expected Raydium CPMM program. Pool discovery applies the same verification rule.</p>
           </Card>
