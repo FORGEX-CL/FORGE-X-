@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Shell, Card } from "./components/Shell";
 
 const stats = [["Live", "Market"], ["7", "Workspaces"], ["24/7", "Access"]];
-const modules = [["Market","/market"],["Launch","/launch"],["Trade","/trade"],["Pools","/pools"],["Portfolio","/portfolio"],["Developers","/developers"]];
+const modules = [["Market","/market"],["Launch","/launch"],["Portfolio","/portfolio"],["Developers","/developers"]];
 
 export default function Home() {
   return <Shell>
