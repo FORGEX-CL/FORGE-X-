@@ -82,7 +82,7 @@ export function FairLaunchGraduator() {
       if (!response.ok || !data.transaction || !data.poolId || typeof data.lastValidBlockHeight !== "number") throw new Error(data.error || "Unable to prepare Raydium graduation");
       setPoolId(data.poolId);
       const transaction = VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64"));
-      if (!transaction.message.staticAccountKeys[0]?.equals(wallet.publicKey)) throw new Error("Graduation fee payer does not match connected developer wallet");
+      if (transaction.message.staticAccountKeys[0]?.toBase58() !== wallet.publicKey.toString()) throw new Error("Graduation fee payer does not match connected developer wallet");
       const expectedMessage = Buffer.from(transaction.message.serialize());
       const connection = new Connection(RPC, "confirmed");
       if (await connection.getBlockHeight("confirmed") > data.lastValidBlockHeight) throw new Error("Graduation transaction has expired");
