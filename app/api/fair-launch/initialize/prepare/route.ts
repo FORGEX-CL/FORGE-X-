@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { getAccount, getAssociatedTokenAddress, getMint } from "@solana/spl-token";
-import { buildInitializeFairLaunch, buildSeedFairLaunchVault } from "@/lib/fair-launch-program";
+import { buildInitializeFairLaunch, buildSeedFairLaunchVault, fairLaunchStatePda, FORGE_X_FAIR_LAUNCH_PROGRAM_ID } from "@/lib/fair-launch-program";
 import { FORGE_X_FAIR_LAUNCH } from "@/lib/fair-launch-rules";
 
 const RPC = process.env.SOLANA_RPC_URL || process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
@@ -25,9 +25,12 @@ export async function POST(request: NextRequest) {
     const developer = key(input.developer, "developer");
     const feeReceiverValue = process.env.FORGE_X_FEE_RECEIVER || process.env.NEXT_PUBLIC_FORGE_X_FEE_RECEIVER;
     const feeReceiver = key(feeReceiverValue, "FORGE_X_FEE_RECEIVER");
-    if (!process.env.NEXT_PUBLIC_FORGE_X_PROGRAM_ID) throw new Error("FORGE X Fair Launch program ID is not configured");
+    if (!FORGE_X_FAIR_LAUNCH_PROGRAM_ID) throw new Error("FORGE X Fair Launch program ID is not configured");
 
     const connection = new Connection(RPC, "confirmed");
+    const stateAddress = fairLaunchStatePda(mint, FORGE_X_FAIR_LAUNCH_PROGRAM_ID);
+    const existingState = await connection.getAccountInfo(stateAddress, "confirmed");
+    if (existingState) throw new Error("Fair Launch state is already initialized");
     const mintInfo = await getMint(connection, mint, "confirmed");
     if (mintInfo.decimals !== FORGE_X_FAIR_LAUNCH.decimals) throw new Error("Mint decimals do not match Fair Launch rules");
     if (mintInfo.supply !== FORGE_X_FAIR_LAUNCH.supply * 10n ** 9n) throw new Error("Mint supply does not match Fair Launch rules");
@@ -46,6 +49,11 @@ export async function POST(request: NextRequest) {
     );
     transaction.feePayer = developer;
     transaction.recentBlockhash = latest.blockhash;
+    const simulation = await connection.simulateTransaction(transaction);
+    if (simulation.value.err) {
+      const logs = simulation.value.logs?.filter(Boolean).slice(-8).join(" | ");
+      throw new Error(`Fair Launch initialization simulation failed${logs ? `: ${logs}` : ""}`);
+    }
 
     return NextResponse.json({ transaction: transaction.serialize({ requireAllSignatures: false }).toString("base64"), mint: mint.toBase58(), developer: developer.toBase58(), feeReceiver: feeReceiver.toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
