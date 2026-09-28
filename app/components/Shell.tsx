@@ -2,7 +2,7 @@ import Link from "next/link";
 import { WalletButton } from "./WalletButton";
 import { ForgeTicker } from "./ForgeTicker";
 
-const nav = [["Home", "/"], ["Market", "/market"], ["Launch", "/launch"], ["Trade", "/trade"], ["Pools", "/pools"], ["Portfolio", "/portfolio"], ["Developers", "/developers"]];
+const nav = [["Home", "/"], ["Market", "/market"], ["Launch", "/launch"], ["Portfolio", "/portfolio"], ["Developers", "/developers"]];
 const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "devnet";
 
 export function Shell({ children }: { children: React.ReactNode }) {
