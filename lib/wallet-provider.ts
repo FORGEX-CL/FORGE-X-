@@ -21,16 +21,19 @@ export type SolanaWalletProvider = {
 
 let activeWallet: StandardWallet | null = null;
 let activeAccount: StandardAccount | null = null;
-let mobileRegistrationPromise: Promise<void> | null = null;\nconst STORAGE_KEY = "forge-x.wallet.name";
+let mobileRegistrationPromise: Promise<void> | null = null;
+const STORAGE_KEY = "forge-x.wallet.name";
 
 function rememberConnection(wallet: StandardWallet, account: StandardAccount) {
   activeWallet = wallet;
   activeAccount = account;
+  if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, wallet.name);
 }
 
-function clearConnection() {
+function forgetConnection() {
   activeWallet = null;
   activeAccount = null;
+  if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
 }
 
 function chainId() {
@@ -83,15 +86,13 @@ function createCompatProvider(wallet: StandardWallet, account: StandardAccount):
       const result = await connectFeature.connect();
       const next = result.accounts?.[0] as StandardAccount | undefined;
       if (!next) throw new Error("Wallet connected without a Solana account");
-      activeWallet = wallet;
-      activeAccount = next;
+      rememberConnection(wallet, next);
       return { publicKey: new PublicKey(next.address) };
     },
     async disconnect() {
       const disconnectFeature = wallet.features["standard:disconnect"] as { disconnect?: () => Promise<void> } | undefined;
       if (disconnectFeature?.disconnect) await disconnectFeature.disconnect();
-      activeWallet = null;
-      activeAccount = null;
+      forgetConnection();
       if (typeof window !== "undefined") delete (window as Window & { solana?: unknown }).solana;
     },
     async signTransaction<T extends SignableTransaction>(transaction: T) {
@@ -179,7 +180,28 @@ export async function disconnectBrowserWallet() {
   }
 }
 
-export async function restoreWalletConnection() {\n  if (typeof window === "undefined" || activeWallet || activeAccount) return getActiveWalletAddress();\n  const savedName = localStorage.getItem(STORAGE_KEY);\n  if (!savedName) return null;\n  await ensureMobileWalletRegistration();\n  const wallet = (await listSolanaWallets()).find((item) => item.name === savedName);\n  if (!wallet) return null;\n  const connectFeature = wallet.features["standard:connect"] as { connect: (options?: { silent?: boolean }) => Promise<{ accounts: readonly StandardAccount[] }> } | undefined;\n  if (!connectFeature?.connect) return null;\n  try {\n    const result = await connectFeature.connect({ silent: true });\n    const account = result.accounts?.[0] as StandardAccount | undefined;\n    if (!account) return null;\n    rememberConnection(wallet, account);\n    exposeCompatProvider(wallet, account);\n    return account.address;\n  } catch {\n    return null;\n  }\n}\n\nexport function getActiveWalletAddress() {
+export async function restoreWalletConnection() {
+  if (typeof window === "undefined" || activeWallet || activeAccount) return getActiveWalletAddress();
+  const savedName = localStorage.getItem(STORAGE_KEY);
+  if (!savedName) return null;
+  await ensureMobileWalletRegistration();
+  const wallet = (await listSolanaWallets()).find((item) => item.name === savedName);
+  if (!wallet) return null;
+  const connectFeature = wallet.features["standard:connect"] as { connect: (options?: { silent?: boolean }) => Promise<{ accounts: readonly StandardAccount[] }> } | undefined;
+  if (!connectFeature?.connect) return null;
+  try {
+    const result = await connectFeature.connect({ silent: true });
+    const account = result.accounts?.[0] as StandardAccount | undefined;
+    if (!account) return null;
+    rememberConnection(wallet, account);
+    exposeCompatProvider(wallet, account);
+    return account.address;
+  } catch {
+    return null;
+  }
+}
+
+export function getActiveWalletAddress() {
   return activeAccount?.address ?? (typeof window !== "undefined" ? (window as Window & { solana?: SolanaWalletProvider }).solana?.publicKey?.toBase58() ?? null : null);
 }
 
