@@ -9,7 +9,7 @@ type StandardWallet = {
   icon: string;
   chains: readonly string[];
   accounts: readonly StandardAccount[];
-  features: Record<string, any>;
+  features: Record<string, unknown>;
 };
 
 export type SolanaWalletProvider = {
@@ -69,7 +69,7 @@ function createCompatProvider(wallet: StandardWallet, account: StandardAccount):
       }
     },
     async connect() {
-      const connectFeature = wallet.features["standard:connect"];
+      const connectFeature = wallet.features["standard:connect"] as { connect: (options?: { silent?: boolean }) => Promise<{ accounts: readonly StandardAccount[] }> };
       const result = await connectFeature.connect();
       const next = result.accounts?.[0] as StandardAccount | undefined;
       if (!next) throw new Error("Wallet connected without a Solana account");
@@ -78,14 +78,14 @@ function createCompatProvider(wallet: StandardWallet, account: StandardAccount):
       return { publicKey: new PublicKey(next.address) };
     },
     async disconnect() {
-      const disconnectFeature = wallet.features["standard:disconnect"];
+      const disconnectFeature = wallet.features["standard:disconnect"] as { disconnect?: () => Promise<void> } | undefined;
       if (disconnectFeature?.disconnect) await disconnectFeature.disconnect();
       activeWallet = null;
       activeAccount = null;
       if (typeof window !== "undefined") delete (window as Window & { solana?: unknown }).solana;
     },
     async signTransaction<T extends SignableTransaction>(transaction: T) {
-      const signFeature = wallet.features["solana:signTransaction"];
+      const signFeature = wallet.features["solana:signTransaction"] as { signTransaction: (input: { account: StandardAccount; transaction: Uint8Array; chain: string }) => Promise<readonly [{ signedTransaction: Uint8Array }]> } | undefined;
       if (!signFeature?.signTransaction) throw new Error("Connected wallet does not support transaction signing");
       const bytes = transaction instanceof Transaction
         ? transaction.serialize({ requireAllSignatures: false, verifySignatures: false })
@@ -122,7 +122,7 @@ export async function connectWallet(wallet?: StandardWallet) {
   const candidates = await listSolanaWallets();
   const target = wallet ?? candidates[0];
   if (target) {
-    const connectFeature = target.features["standard:connect"];
+    const connectFeature = target.features["standard:connect"] as { connect: (options?: { silent?: boolean }) => Promise<{ accounts: readonly StandardAccount[] }> };
     const result = await connectFeature.connect();
     const account = result.accounts?.[0] as StandardAccount | undefined;
     if (!account) throw new Error("Wallet connected without a Solana account");
