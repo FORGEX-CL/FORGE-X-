@@ -22,8 +22,16 @@ export function WalletButton() {
 
   useEffect(() => {
     let cancelled = false;
-    void listSolanaWallets().then((items) => {
-      if (!cancelled) setWallets(items);
+    void listSolanaWallets().then(async (items) => {
+      if (cancelled) return;
+      setWallets(items);
+      const restored = await restoreWalletConnection();
+      if (!cancelled && restored) {
+        const saved = items.find((wallet) => wallet.accounts.some((account) => account.address === restored));
+        setAddress(restored);
+        setSelectedWallet(saved?.name || "Solana wallet");
+        setStatus("connected");
+      }
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
