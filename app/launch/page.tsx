@@ -33,7 +33,7 @@ export default function Launch() {
           <div className="flex items-center gap-5">
             <Image src="/forge-x-mark.svg" alt="FORGE X" width={80} height={80} className="rounded-2xl" priority />
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f5c542]">FORGE X</p>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#8b7cff]">FORGE X</p>
               <h1 className="mt-1 text-3xl font-black tracking-tight">Launch</h1>
             </div>
           </div>
@@ -49,7 +49,7 @@ export default function Launch() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {steps.map(([n, t, d]) => (
             <Card key={n}>
-              <span className="text-xs font-bold text-[#f5c542]">{n}</span>
+              <span className="text-xs font-bold text-[#8b7cff]">{n}</span>
               <h2 className="mt-5 text-xl font-bold">{t}</h2>
               <p className="mt-2 text-sm leading-6 text-white/45">{d}</p>
             </Card>
@@ -59,14 +59,14 @@ export default function Launch() {
         <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_.8fr]">
           <div>
             <div className="mb-3 grid grid-cols-2 rounded-xl border border-white/10 bg-white/[.02] p-1">
-              <button type="button" onClick={() => setMode("fair")} className={`rounded-lg px-4 py-3 text-sm font-bold ${mode === "fair" ? "bg-[#f5c542] text-black" : "text-white/45"}`}>Fair Launch</button>
-              <button type="button" onClick={() => setMode("advanced")} className={`rounded-lg px-4 py-3 text-sm font-bold ${mode === "advanced" ? "bg-[#f5c542] text-black" : "text-white/45"}`}>Advanced Launch</button>
+              <button type="button" onClick={() => setMode("fair")} className={`rounded-lg px-4 py-3 text-sm font-bold ${mode === "fair" ? "bg-[#8b7cff] text-black" : "text-white/45"}`}>Fair Launch</button>
+              <button type="button" onClick={() => setMode("advanced")} className={`rounded-lg px-4 py-3 text-sm font-bold ${mode === "advanced" ? "bg-[#8b7cff] text-black" : "text-white/45"}`}>Advanced Launch</button>
             </div>
             {mode === "fair" ? <TokenLaunchSigner /> : <AdvancedLaunchPanel />}
           </div>
 
           <Card>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#f5c542]">Protocol rules</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8b7cff]">Protocol rules</p>
             <div className="mt-5 space-y-3">
               {rules.map(([a, b]) => (
                 <div key={a} className="flex items-center justify-between border-b border-white/10 pb-3 text-sm">
@@ -74,7 +74,7 @@ export default function Launch() {
                 </div>
               ))}
             </div>
-            <div className="mt-5 rounded-xl border border-[#f5c542]/15 bg-[#f5c542]/5 p-4 text-xs leading-5 text-white/55">
+            <div className="mt-5 rounded-xl border border-[#8b7cff]/15 bg-[#8b7cff]/5 p-4 text-xs leading-5 text-white/55">
               Fair Launch requires mint authority, freeze authority and metadata update authority to be revoked, with metadata made immutable in the launch transaction.
             </div>
             <p className="mt-4 text-xs leading-5 text-white/35">Current environment is controlled by the configured Solana cluster. Mainnet release requires successful Devnet end-to-end testing and security review.</p>
