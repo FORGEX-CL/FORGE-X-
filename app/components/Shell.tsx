@@ -34,9 +34,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <ForgeTicker />
     </header>
     {children}
-    <footer className="w-full overflow-hidden border-t border-white/10 px-4 py-8 text-center sm:px-5 sm:py-10 text-xs text-white/35">FORGE X · Solana-native infrastructure · Built for the next on-chain economy.</footer>
+    <footer className="w-full overflow-hidden border-t border-white/10 px-4 py-8 text-center sm:px-5 sm:py-10 text-xs text-white/35">FORGE X</footer>
   </div>;
 }
 
-export function SectionTitle({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) { return <div className="mb-6 sm:mb-8"><div className="text-xs font-bold uppercase tracking-[0.22em] text-[#8b7cff]">{eyebrow}</div><h1 className="mt-2 text-3xl font-black tracking-tight sm:mt-3 sm:text-5xl">{title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/50 sm:text-base">{text}</p></div>; }
+export function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string; text?: string }) { return <div className="mb-6 sm:mb-8"><div className="text-xs font-bold uppercase tracking-[0.22em] text-[#8b7cff]">{eyebrow}</div><h1 className="mt-2 text-3xl font-black tracking-tight sm:mt-3 sm:text-5xl">{title}</h1></div>; }
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <div className={`rounded-2xl border border-white/10 bg-white/[0.025] p-6 ${className}`}>{children}</div>; }
