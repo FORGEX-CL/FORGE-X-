@@ -82,10 +82,17 @@ export function FairLaunchGraduator() {
       if (!response.ok || !data.transaction || !data.poolId) throw new Error(data.error || "Unable to prepare Raydium graduation");
       setPoolId(data.poolId);
       const transaction = VersionedTransaction.deserialize(Buffer.from(data.transaction, "base64"));
+      if (!transaction.message.staticAccountKeys[0]?.equals(wallet.publicKey)) throw new Error("Graduation fee payer does not match connected developer wallet");
+      const expectedMessage = Buffer.from(transaction.message.serialize());
+      const connection = new Connection(RPC, "confirmed");
+      const latestBlockHeight = await connection.getBlockHeight("confirmed");
+      if (latestBlockHeight > (transaction.message.recentBlockhash ? Number.MAX_SAFE_INTEGER : 0)) throw new Error("Graduation transaction is invalid");
       setStatus("awaiting_signature");
       const signed = await wallet.signTransaction(transaction);
+      const signedMessage = Buffer.from(signed.message.serialize());
+      if (!expectedMessage.equals(signedMessage)) throw new Error("Wallet changed the prepared graduation transaction");
+      if (!signed.signatures[0] || signed.signatures[0].every((byte) => byte === 0)) throw new Error("Graduation transaction was not signed by the developer wallet");
       setStatus("confirming");
-      const connection = new Connection(RPC, "confirmed");
       const txid = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
       setSignature(txid);
       await waitFor(connection, txid);
