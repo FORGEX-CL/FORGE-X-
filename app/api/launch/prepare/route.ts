@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       associatedTokenAccount: result.associatedTokenAccount,
       transaction: result.transaction.serialize({ requireAllSignatures: false }).toString("base64"),
       lastValidBlockHeight: result.lastValidBlockHeight,
-    });
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to prepare token launch" }, { status: 400 });
   }
