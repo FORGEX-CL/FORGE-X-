@@ -10,28 +10,28 @@
     "test:fair-launch": "cargo test --manifest-path programs/forge-x-fair-launch/Cargo.toml"
   },
   "dependencies": {
-    "@solana/web3.js": "^1.98.4",
-    "@solana/spl-token": "^0.4.14",
-    "@raydium-io/raydium-sdk-v2": "^0.2.42-alpha",
-    "@metaplex-foundation/mpl-token-metadata": "^3.4.0",
-    "@metaplex-foundation/umi": "^1.5.1",
-    "@metaplex-foundation/umi-bundle-defaults": "^1.5.1",
-    "@metaplex-foundation/umi-web3js-adapters": "^1.5.1",
-    "bn.js": "^5.2.1",
-    "bs58": "^6.0.0",
-    "pinata": "^2.5.0",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "@solana/web3.js": "1.99.0",
+    "@solana/spl-token": "0.4.15",
+    "@raydium-io/raydium-sdk-v2": "0.2.42-alpha",
+    "@metaplex-foundation/mpl-token-metadata": "3.4.0",
+    "@metaplex-foundation/umi": "1.6.0",
+    "@metaplex-foundation/umi-bundle-defaults": "1.6.0",
+    "@metaplex-foundation/umi-web3js-adapters": "1.6.0",
+    "bn.js": "5.2.5",
+    "bs58": "6.0.0",
+    "pinata": "2.5.6",
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "latest",
-    "eslint": "latest",
-    "eslint-config-next": "latest",
-    "typescript": "latest",
-    "@types/bn.js": "^5.1.5",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@tailwindcss/postcss": "4.3.3",
+    "eslint": "10.11.0",
+    "eslint-config-next": "16.3.6",
+    "typescript": "5.9.3",
+    "@types/bn.js": "5.2.0",
+    "@types/node": "26.6.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
   }
 }
