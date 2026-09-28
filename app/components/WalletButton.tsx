@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { connectWallet, disconnectBrowserWallet, listSolanaWallets, type StandardWallet } from "../../lib/wallet-provider";
+import { connectWallet, disconnectBrowserWallet, listSolanaWallets, restoreWalletConnection, type StandardWallet } from "../../lib/wallet-provider";
 
 function shortAddress(address: string) {
   return address.length > 12 ? `${address.slice(0, 5)}…${address.slice(-4)}` : address;
