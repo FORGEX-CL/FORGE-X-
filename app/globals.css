@@ -1,71 +1,43 @@
 @import "tailwindcss";
 
 :root{
-  --background:#07080d;
-  --surface:#10121a;
-  --border:#242735;
-  --foreground:#f5f7ff;
-  --muted:#8d93a7;
-  --accent:#8b7cff;
-  --accent-2:#25d0c7;
+  --background:#0d1117;
+  --header:#111820;
+  --surface:#151b22;
+  --card:#171e26;
+  --border:#27313a;
+  --foreground:#f5f7f9;
+  --muted:#8b949e;
+  --brand-green:#1b6b4a;
+  --brand-green-dark:#145236;
+  --brand-green-light:#238c60;
+  --brand-yellow:#ffb800;
+  --brand-yellow-dark:#e5a500;
 }
 
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;overflow-x:hidden}
-body{
-  margin:0;
-  min-width:0;
-  max-width:100%;
-  overflow-x:hidden;
-  background:
-    radial-gradient(circle at 20% -10%,rgba(139,124,255,.12),transparent 32%),
-    radial-gradient(circle at 85% 0%,rgba(37,208,199,.08),transparent 28%),
-    var(--background);
-  color:var(--foreground);
-  font-family:Arial,Helvetica,sans-serif;
-}
+body{margin:0;min-width:0;max-width:100%;overflow-x:hidden;background:var(--background);color:var(--foreground);font-family:Arial,Helvetica,sans-serif}
 button,a,input,textarea,select{font:inherit}
 img,svg,video,canvas{max-width:100%}
 input,textarea,select{max-width:100%}
 a{color:inherit;text-decoration:none}
 button{max-width:100%}
 h1,h2,h3,h4,p{overflow-wrap:anywhere}
-.forge-input{
-  margin-top:.5rem;
-  width:100%;
-  min-width:0;
-  border-radius:.75rem;
-  border:1px solid rgba(255,255,255,.1);
-  background:rgba(255,255,255,.03);
-  padding:.8rem 1rem;
-  color:white;
-  outline:none
-}
-.forge-input:focus{
-  border-color:rgba(139,124,255,.65);
-  box-shadow:0 0 0 3px rgba(139,124,255,.08)
-}
 
-/* Global FORGE X responsive system */
+.forge-input{margin-top:.5rem;width:100%;min-width:0;border-radius:.5rem;border:1px solid var(--border);background:#10161c;padding:.8rem 1rem;color:white;outline:none}
+.forge-input:focus{border-color:var(--brand-green-light);box-shadow:0 0 0 3px rgba(35,140,96,.12)}
 .forge-page{width:100%;min-width:0;overflow-x:hidden}
 .forge-content{width:min(100% - 2rem,80rem);margin-inline:auto}
 .forge-card{min-width:0;max-width:100%}
 
-/* Preserve readable layouts on small phones without forcing horizontal scrolling. */
-@media (max-width:640px){
-  .forge-content{width:min(100% - 1rem,80rem)}\n  body{font-size:15px}\n  button,a{touch-action:manipulation}
-  .forge-card{border-radius:1rem}
-  .forge-card > *{min-width:0}
-  .break-mobile{overflow-wrap:anywhere;word-break:break-word}
-}
-@media (min-width:641px) and (max-width:1024px){
-  .forge-content{width:min(100% - 2.5rem,80rem)}
-}
+@media (max-width:640px){.forge-content{width:min(100% - 1rem,80rem)}body{font-size:15px}button,a{touch-action:manipulation}.forge-card{border-radius:.75rem}.forge-card>*{min-width:0}.break-mobile{overflow-wrap:anywhere;word-break:break-word}}
+@media (min-width:641px) and (max-width:1024px){.forge-content{width:min(100% - 2.5rem,80rem)}}
 
-/* Replace the legacy gold accent globally with the new violet/cyan Forge palette. */
-[class~="text-[#f5c542]"]{color:#8b7cff!important}
-[class~="bg-[#f5c542]"]{background-color:#8b7cff!important}
-[class~="border-[#f5c542]"]{border-color:rgba(139,124,255,.5)!important}
-[class~="text-[#ffd75e]"]{color:#a79bff!important}
-[class~="bg-[#ffd75e]"]{background-color:#a79bff!important}
-[class~="border-[#ffd75e]"]{border-color:rgba(167,155,255,.5)!important}
+/* SportyBet-inspired green/yellow visual system applied to legacy Forge utility classes. */
+[class~="text-[#8b7cff]"]{color:var(--brand-yellow)!important}
+[class~="bg-[#8b7cff]"]{background-color:var(--brand-green)!important}
+[class~="border-[#8b7cff]"]{border-color:rgba(255,184,0,.35)!important}
+[class~="text-[#a79bff]"]{color:#ffd15c!important}
+[class~="bg-[#a79bff]"]{background-color:var(--brand-green-light)!important}
+[class~="border-[#a79bff]"]{border-color:rgba(255,184,0,.35)!important}
