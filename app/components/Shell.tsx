@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { WalletButton } from "./WalletButton";
 import { ForgeTicker } from "./ForgeTicker";
+import { AIChatBar } from "./AIChatBar";
 
 const nav = [["Home", "/"], ["Market", "/market"], ["Launch", "/launch"], ["Portfolio", "/portfolio"], ["Developers", "/developers"]];
 const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "devnet";
@@ -37,7 +38,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <ForgeTicker />
     </header>
     {children}
-    <footer className="w-full overflow-hidden border-t border-white/10 px-4 py-8 text-center text-xs text-white/35 sm:px-5 sm:py-10">FORGE X</footer>
+    <footer className="w-full overflow-hidden border-t border-white/10 px-4 py-8 pb-24 text-center text-xs text-white/35 sm:px-5 sm:py-10 sm:pb-28">FORGE X</footer>
+    <AIChatBar />
   </div>;
 }
 
