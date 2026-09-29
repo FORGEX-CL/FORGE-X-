@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Shell, SectionTitle, Card } from "../components/Shell";
 
 const prompts = [
@@ -12,6 +12,18 @@ const prompts = [
 export default function ForgeAI() {
   const [prompt, setPrompt] = useState("");
   const [answer, setAnswer] = useState("");
+  const [agent, setAgent] = useState("FORGE AI");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const incomingPrompt = params.get("prompt");
+    const incomingAgent = params.get("agent");
+    if (incomingPrompt) setPrompt(incomingPrompt);
+    if (incomingAgent) {
+      const names: Record<string, string> = { forge: "FORGE AI", market: "Market Agent", risk: "Risk Agent", launch: "Launch Agent" };
+      setAgent(names[incomingAgent] || "FORGE AI");
+    }
+  }, []);
 
   function analyze() {
     if (!prompt.trim()) return;
@@ -23,12 +35,12 @@ export default function ForgeAI() {
       <SectionTitle eyebrow="FORGE AI" title="Your on-chain copilot." text="A focused intelligence workspace for market research, token checks and launch decisions. It is deliberately separated from execution so analysis never pretends to be a transaction." />
       <Card>
         <div className="rounded-xl border border-[#8b7cff]/15 bg-[#8b7cff]/5 p-5">
-          <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#8b7cff]">Ask FORGE</div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><div className="text-xs font-bold uppercase tracking-[0.2em] text-[#8b7cff]">Ask {agent}</div><span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] font-semibold text-white/40">{agent === "FORGE AI" ? "General" : "Specialist agent"}</span></div>
           <p className="mt-2 text-sm text-white/45">Choose a starting question or write your own.</p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">{prompts.map((item) => <button key={item} onClick={() => setPrompt(item)} className="rounded-full border border-white/10 px-3 py-2 text-xs text-white/55 hover:border-white/20 hover:text-white">{item}</button>)}</div>
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask about a token, market, launch setup or risk..." className="mt-5 min-h-32 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-4 text-sm outline-none placeholder:text-white/25 focus:border-[#8b7cff]/40" />
-        <button onClick={analyze} className="mt-4 rounded-xl bg-[#8b7cff] px-6 py-3 text-sm font-bold text-black hover:bg-[#a79bff]">Analyze</button>
+        <button onClick={analyze} className="mt-4 rounded-xl bg-[#8b7cff] px-6 py-3 text-sm font-bold text-black hover:bg-[#a79bff]">Send to {agent}</button>
         {answer && <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-5 text-sm leading-6 text-white/65">{answer}</div>}
       </Card>
     </main>
